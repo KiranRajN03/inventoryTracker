@@ -1,0 +1,119 @@
+{
+  "theme": "light",
+  "archetype": "Archetype 4 (Swiss & High-Contrast)",
+  "rationale": "For an enterprise inventory system, clarity and authority are paramount. We avoid generic 'SaaS blue' and instead use a stark, function-first Swiss design. Color is strictly used as a semantic indicator (Red for alerts, Blue for primary actions). This provides a visually pleasing, highly legible experience that speeds up operational warehouse tasks.",
+  "typography": {
+    "fonts": {
+      "headings": "Cabinet Grotesk",
+      "body": "IBM Plex Sans",
+      "mono": "JetBrains Mono"
+    },
+    "hierarchy": {
+      "h1": "text-4xl sm:text-5xl tracking-tighter font-black",
+      "h2": "text-2xl sm:text-3xl tracking-tight font-bold",
+      "h3": "text-xl sm:text-2xl tracking-tight font-semibold",
+      "h4": "text-lg font-medium",
+      "body": "text-base leading-relaxed",
+      "small_labels": "text-xs tracking-[0.2em] uppercase font-bold text-muted-foreground"
+    },
+    "guidelines": [
+      "No generic sans (Inter/Roboto) for headings. Use Cabinet Grotesk for authoritative, structural layout.",
+      "Use JetBrains Mono for SKU codes, quantities, and StockLedger IDs.",
+      "Never default to bold for all headers. Use weight contrast (Black vs Regular/Light)."
+    ]
+  },
+  "colors": {
+    "palette": {
+      "background": "#F4F4F6",
+      "surface": "#FFFFFF",
+      "text": "#0A0A0A",
+      "muted": "#737373",
+      "border": "#E5E5E5",
+      "primary": "#002FA7",
+      "primary_hover": "#001F70",
+      "alert_destructive": "#FF3B30",
+      "warning": "#FFCC00",
+      "success": "#34C759"
+    },
+    "guidelines": [
+      "95% of the UI should be monochrome. Color exists ONLY to guide action or indicate status.",
+      "Never use pure #000000 or #808080. Grey is tinted.",
+      "Ensure text contrast meets APCA/WCAG standards. For alerts, use white text on the #FF3B30 background."
+    ]
+  },
+  "spacing_and_layout": {
+    "grid_system": {
+      "dashboard_base": "grid-cols-1 md:grid-cols-3 lg:grid-cols-4",
+      "dashboard_gap": "gap-4 md:gap-6",
+      "bento_spans": {
+        "summary_widget": "col-span-1",
+        "primary_chart": "col-span-2 row-span-2 lg:col-span-3",
+        "activity_feed": "col-span-1 row-span-2"
+      }
+    },
+    "surfaces": {
+      "dashboard_cards": "Flat solid surfaces (#FFFFFF) with sharp 1px border (border-[#E5E5E5]). No drop shadows.",
+      "headers": "Solid background with a hard 1px bottom border. No glassmorphism here, this is a control room.",
+      "mobile_panels": "Subtle border-radius (max 8px) for native feel, generous padding (p-6) for large tap targets."
+    },
+    "guidelines": [
+      "Every pixel utilized. Use 'h-full' on grid children to ensure they stretch. No jagged bottoms.",
+      "Use 'border-collapse' style layout for data-heavy sections (Grid Borders look).",
+      "Mobile-first responsive. Mobile image heights must not exceed 80vh."
+    ]
+  },
+  "components_and_interactions": {
+    "buttons_and_ctas": {
+      "primary": "Solid primary color (#002FA7), stark white text, sharp edges (rounded-sm or rounded-none), hover:opacity-90.",
+      "mobile": "Must have min-height of 56px to 64px for easy thumb tapping with gloves on the warehouse floor."
+    },
+    "tables_and_lists": {
+      "web_sku_table": "Dense control room layout. Use customized Shadcn Table. No row borders except bottom. Use Mono font for all SKU strings and ledger counts.",
+      "mobile_lists": "Cardless, full-width rows with a 1px border-b. High contrast."
+    },
+    "navigation": {
+      "web": "Collapsible left sidebar. Very minimal, text-heavy.",
+      "mobile": "Bottom tab bar + top floating scanner action button."
+    },
+    "guidelines": [
+      "Avoid Shadcn 'Card' wrapper for everything. Use raw divs with specific borders to avoid 'box inside a box' visual clutter.",
+      "Use Recharts with sharp, straight lines (type='linear') for velocity charts, no smooth bezier curves.",
+      "All interactive and key informational elements MUST include a 'data-testid' attribute (e.g., data-testid='receive-stock-btn')."
+    ]
+  },
+  "icons_and_assets": {
+    "icon_library": "@phosphor-icons/react",
+    "icon_style": "Regular or Bold (high legibility). No duotone on the warehouse floor.",
+    "installation": "yarn add @phosphor-icons/react"
+  },
+  "mobile_specifics": {
+    "offline_first": "Visual indicator for 'Offline Mode' (Warning Yellow pill). Cache badge on sync buttons.",
+    "barcode_scanning": "Camera view should take up 70% of viewport with a stark, high-contrast framing reticle.",
+    "gestures": "Swipe actions for quick 'Approve/Reject' in Cycle Counting."
+  },
+  "image_urls": [
+    {
+      "url": "https://static.prod-images.emergentagent.com/jobs/86b066e6-16cc-4b95-86c1-8aeb1025cdaf/images/a0a5342a7d30a1821e3fe20f49f9b9c32f8a51eb09da10083c23e3fefc2f7a76.png",
+      "category": "Admin Login Background",
+      "description": "Minimalist Swiss design architectural abstract, clean white and light grey geometric warehouse simulation with stark lighting."
+    },
+    {
+      "url": "https://static.prod-images.emergentagent.com/jobs/86b066e6-16cc-4b95-86c1-8aeb1025cdaf/images/6eefca0fd2ef453da3e4756bf41b39e8a49f38f3374cc440c181cd3298aa0b55.png",
+      "category": "Mobile Onboarding / Welcome Background",
+      "description": "Cinematic macro photography of a barcode scanner laser hitting a clean white box."
+    },
+    {
+      "url": "https://images.pexels.com/photos/36522028/pexels-photo-36522028.jpeg",
+      "category": "Empty State / Web App Assets",
+      "description": "High-tech automated warehouse system featuring a green robotic arm."
+    }
+  ],
+  "instructions_to_main_agent": [
+    "Implement the immutable StockLedger using strict transactional inserts. Current stock is derived, not mutated.",
+    "Setup role-based auth routing: Admins to React Web Dashboard, Workers to React Native Mobile Flow.",
+    "Use raw HTML/Tailwind for the dashboard skeleton to achieve the dense 'Control Room' grid layout.",
+    "Override default Shadcn styles to remove heavy shadows and large border-radii; enforce max 4px radius and sharp 1px borders.",
+    "Ensure all buttons, inputs, and major table rows have the `data-testid` attribute for robust automated testing.",
+    "Build the mobile UI with Expo, ensuring touch targets are massive (p-6, min-h-[64px]) for warehouse workers."
+  ]
+}

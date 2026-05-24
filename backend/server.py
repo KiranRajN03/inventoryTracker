@@ -184,12 +184,12 @@ async def register(user: UserRegister, response: Response):
     access_token = create_access_token(user_id, email_lower)
     refresh_token = create_refresh_token(user_id)
     
-    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, samesite="lax", max_age=900, path="/")
-    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=False, samesite="lax", max_age=604800, path="/")
+    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=True, samesite="none", max_age=900, path="/")
+    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, samesite="none", max_age=604800, path="/")
     
     user_doc.pop("_id", None)
     user_doc.pop("password_hash", None)
-    return {"_id": user_id, **user_doc}
+    return {"_id": user_id, "access_token": access_token, **user_doc}
 
 @api_router.post("/auth/login")
 async def login(credentials: UserLogin, response: Response):
@@ -202,11 +202,12 @@ async def login(credentials: UserLogin, response: Response):
     access_token = create_access_token(user_id, email_lower)
     refresh_token = create_refresh_token(user_id)
     
-    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=False, samesite="lax", max_age=900, path="/")
-    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=False, samesite="lax", max_age=604800, path="/")
+    response.set_cookie(key="access_token", value=access_token, httponly=True, secure=True, samesite="none", max_age=900, path="/")
+    response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, samesite="none", max_age=604800, path="/")
     
     user["_id"] = user_id
     user.pop("password_hash", None)
+    user["access_token"] = access_token
     return user
 
 @api_router.get("/auth/me")
@@ -470,7 +471,7 @@ app.include_router(api_router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[os.environ.get("FRONTEND_URL", "http://localhost:3000")],
+    allow_origins=[o.strip() for o in os.environ.get("CORS_ORIGINS", "http://localhost:3000").split(",") if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

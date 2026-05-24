@@ -6,6 +6,18 @@ const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
+const TOKEN_KEY = 'inventory_access_token';
+
+// Axios global config: send cookies AND Authorization header
+axios.defaults.withCredentials = true;
+axios.interceptors.request.use((config) => {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (token) {
+    config.headers = config.headers || {};
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
 
 function formatApiErrorDetail(detail) {
   if (detail == null) return 'Something went wrong. Please try again.';
@@ -30,11 +42,10 @@ export const AuthProvider = ({ children }) => {
 
   const checkAuth = async () => {
     try {
-      const { data } = await axios.get(`${API_URL}/api/auth/me`, {
-        withCredentials: true,
-      });
+      const { data } = await axios.get(`${API_URL}/api/auth/me`);
       setUser(data);
     } catch (err) {
+      localStorage.removeItem(TOKEN_KEY);
       setUser(false);
     } finally {
       setLoading(false);
@@ -44,11 +55,10 @@ export const AuthProvider = ({ children }) => {
   const login = async (email, password) => {
     try {
       setError('');
-      const { data } = await axios.post(
-        `${API_URL}/api/auth/login`,
-        { email, password },
-        { withCredentials: true }
-      );
+      const { data } = await axios.post(`${API_URL}/api/auth/login`, { email, password });
+      if (data.access_token) {
+        localStorage.setItem(TOKEN_KEY, data.access_token);
+      }
       setUser(data);
       return data;
     } catch (e) {
@@ -61,11 +71,10 @@ export const AuthProvider = ({ children }) => {
   const register = async (email, password, name, role = 'worker') => {
     try {
       setError('');
-      const { data } = await axios.post(
-        `${API_URL}/api/auth/register`,
-        { email, password, name, role },
-        { withCredentials: true }
-      );
+      const { data } = await axios.post(`${API_URL}/api/auth/register`, { email, password, name, role });
+      if (data.access_token) {
+        localStorage.setItem(TOKEN_KEY, data.access_token);
+      }
       setUser(data);
       return data;
     } catch (e) {
@@ -77,10 +86,12 @@ export const AuthProvider = ({ children }) => {
 
   const logout = async () => {
     try {
-      await axios.post(`${API_URL}/api/auth/logout`, {}, { withCredentials: true });
-      setUser(false);
+      await axios.post(`${API_URL}/api/auth/logout`, {});
     } catch (err) {
-      console.error('Logout error:', err);
+      // ignore
+    } finally {
+      localStorage.removeItem(TOKEN_KEY);
+      setUser(false);
     }
   };
 

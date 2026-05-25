@@ -3,5 +3,6 @@ name = "inventory-backend"
 version = "0.1.0"
 requires-python = ">=3.11"
 
-[tool.vercel]
-entrypoint = "server.py"
+# Vercel auto-detects `app` in api/index.py (see Vercel FastAPI docs).
+# If you set an entrypoint manually, use module:variable format, e.g. server:app
+# NOT server.py

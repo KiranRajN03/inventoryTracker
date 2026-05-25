@@ -12,7 +12,7 @@ This app uses **two separate Vercel projects** (backend and frontend). Deploy th
 | **Output Directory** | *(leave empty)* |
 | **Install Command** | *(default)* |
 
-The backend entrypoint is `server.py` (see `pyproject.toml`). Do not add a legacy `functions` block for `api/index.py` in `vercel.json`.
+The backend entrypoint is `api/index.py`, which imports `app` from `server.py`. Do not add a legacy `functions` block in `vercel.json`. If using `pyproject.toml`, set `entrypoint = "server:app"` (not `server.py`).
 
 ### Troubleshooting: `functions` / `api/index.py` build error
 

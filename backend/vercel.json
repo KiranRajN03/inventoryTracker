@@ -1,16 +1,11 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "api/index.py",
-      "use": "@vercel/python",
-      "config": {
-        "maxLambdaSize": "15mb",
-        "includeFiles": "server.py"
-      }
-    }
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api/index.py" }
   ],
-  "routes": [
-    { "src": "/(.*)", "dest": "api/index.py" }
-  ]
+  "functions": {
+    "api/index.py": {
+      "includeFiles": "server.py"
+    }
+  }
 }

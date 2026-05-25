@@ -236,8 +236,9 @@ def get_me(current_user: dict = Depends(get_current_user)):
 
 @api_router.post("/auth/logout")
 def logout(response: Response):
-    response.delete_cookie("access_token")
-    response.delete_cookie("refresh_token")
+    cookie_kwargs = {"path": "/", "secure": True, "samesite": "none", "httponly": True}
+    response.delete_cookie("access_token", **cookie_kwargs)
+    response.delete_cookie("refresh_token", **cookie_kwargs)
     return {"message": "Logged out successfully"}
 
 # ===== PRODUCTS ENDPOINTS =====
@@ -647,11 +648,14 @@ def init_db():
 
 @app.on_event("startup")
 async def startup_event():
+    if os.environ.get("VERCEL") and get_jwt_secret() == "super-secret-key-for-dev":
+        logger.warning("JWT_SECRET is not set in Vercel — using an insecure default. Set JWT_SECRET in project env vars.")
     init_db()
-    
-    Path("/app/memory").mkdir(exist_ok=True, parents=True)
+
     try:
-        with open("/app/memory/test_credentials.md", "w") as f:
+        memory_dir = Path("/app/memory")
+        memory_dir.mkdir(exist_ok=True, parents=True)
+        with open(memory_dir / "test_credentials.md", "w") as f:
             admin_email = os.environ.get("ADMIN_EMAIL", "admin@inventory.com")
             admin_password = os.environ.get("ADMIN_PASSWORD", "Admin@123")
             f.write(f"# Test Credentials\n\n")

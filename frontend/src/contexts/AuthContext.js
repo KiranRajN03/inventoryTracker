@@ -1,11 +1,10 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import axios from 'axios';
+import { API_URL } from '@/lib/api';
 
 const AuthContext = createContext(null);
 
 export const useAuth = () => useContext(AuthContext);
-
-const API_URL = process.env.REACT_APP_BACKEND_URL;
 const TOKEN_KEY = 'inventory_access_token';
 
 // Axios global config: send cookies AND Authorization header

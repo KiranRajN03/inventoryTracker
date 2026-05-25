@@ -37,7 +37,7 @@ If you see:
 | Variable | Required | Example | Notes |
 |----------|----------|---------|--------|
 | `JWT_SECRET` | **Yes** (production) | `openssl rand -hex 32` | Long random string. Never use the dev default in production. |
-| `CORS_ORIGINS` | **Yes** | `https://your-frontend.vercel.app` | Exact frontend URL(s), comma-separated. Include preview URLs if you use branch deploys, e.g. `https://app.vercel.app,https://app-git-main-user.vercel.app` |
+| `CORS_ORIGINS` | **Yes** | `https://your-frontend.vercel.app` | Exact frontend URL(s), comma-separated, **no trailing slash**. Must include every URL users open in the browser (production + preview), e.g. `https://inventory-tracker.vercel.app,https://inventory-tracker-git-main-user.vercel.app` |
 | `ADMIN_EMAIL` | Recommended | `admin@yourcompany.com` | Seeded admin account on first startup |
 | `ADMIN_PASSWORD` | Recommended | *(strong password)* | Change from default `Admin@123` |
 | `SQLITE_DB_PATH` | No | `/tmp/inventory.db` | Default on Vercel is `/tmp` (see limitation below) |
@@ -70,7 +70,7 @@ Use this **without a trailing slash** for the frontend variable below.
 
 | Variable | Required | Example | Notes |
 |----------|----------|---------|--------|
-| `REACT_APP_BACKEND_URL` | **Yes** | `https://inventory-api-xyz.vercel.app` | Backend base URL, **no trailing slash**. Baked in at **build time** — redeploy frontend after changing it. |
+| `REACT_APP_BACKEND_URL` | **Yes** | `https://inventory-api-xyz.vercel.app` | Backend base URL, **no trailing slash** (a trailing `/` causes `//api/...` requests). Baked in at **build time** — redeploy frontend after changing it. |
 
 Apply to **Production** (and **Preview** if you use preview deployments with a real backend URL).
 

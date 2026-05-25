@@ -6,11 +6,23 @@ This app uses **two separate Vercel projects** (backend and frontend). Deploy th
 
 | Setting | Value |
 |--------|--------|
-| **Root Directory** | `backend` |
-| **Framework Preset** | Other (or FastAPI if offered) |
+| **Root Directory** | `backend` (**required** — do not use the repo root) |
+| **Framework Preset** | FastAPI (or Other) |
 | **Build Command** | *(leave empty — Python is detected automatically)* |
 | **Output Directory** | *(leave empty)* |
 | **Install Command** | *(default)* |
+
+The backend entrypoint is `server.py` (see `pyproject.toml`). Do not add a legacy `functions` block for `api/index.py` in `vercel.json`.
+
+### Troubleshooting: `functions` / `api/index.py` build error
+
+If you see:
+
+`The pattern "api/index.py" defined in functions doesn't match any Serverless Functions`
+
+1. Confirm **Root Directory** is `backend`, not the monorepo root.
+2. Use the current minimal `backend/vercel.json` (no `functions` or `builds` section).
+3. Redeploy after pulling the latest changes.
 
 ### Backend environment variables (Vercel → Settings → Environment Variables)
 

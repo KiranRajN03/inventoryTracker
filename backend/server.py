@@ -625,7 +625,7 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_stock_product ON stock_ledger (product_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_stock_timestamp ON stock_ledger (timestamp)")
     
-    admin_email = os.environ.get("ADMIN_EMAIL", "admin@inventory.com")
+    admin_email = os.environ.get("ADMIN_EMAIL", "kiranrajn03@gmail.com")
     admin_password = os.environ.get("ADMIN_PASSWORD", "Admin@123")
     
     cursor.execute("SELECT * FROM users WHERE email = ?", (admin_email,))

@@ -14,6 +14,14 @@ This app uses **two separate Vercel projects** (backend and frontend). Deploy th
 
 The backend entrypoint is `api/index.py`, which imports `app` from `server.py`. Do not add a legacy `functions` block in `vercel.json`. If using `pyproject.toml`, set `entrypoint = "server:app"` (not `server.py`).
 
+### Troubleshooting: `ModuleNotFoundError: No module named 'fastapi'`
+
+Vercel did not install Python dependencies. Fix:
+
+1. **Root Directory** must be `backend` (so `requirements.txt` and `pyproject.toml` are at the project root).
+2. Ensure `pyproject.toml` includes a `[project].dependencies` list (not just `requires-python`).
+3. Redeploy after pulling the latest changes.
+
 ### Troubleshooting: `functions` / `api/index.py` build error
 
 If you see:

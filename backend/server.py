@@ -21,9 +21,20 @@ load_dotenv(ROOT_DIR / '.env')
 # Use /tmp on Vercel as it's the only writable directory, otherwise local directory
 DB_PATH = os.environ.get('SQLITE_DB_PATH', '/tmp/inventory.db' if 'VERCEL' in os.environ else str(ROOT_DIR / 'inventory.db'))
 
-def get_db_connection():
+def get_db_connection(init=True):
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    if init:
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+            if not cursor.fetchone():
+                conn.close()
+                init_db()
+                conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+                conn.row_factory = sqlite3.Row
+        except Exception:
+            pass
     return conn
 
 app = FastAPI()
@@ -570,7 +581,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 def init_db():
-    conn = get_db_connection()
+    conn = get_db_connection(init=False)
     cursor = conn.cursor()
     
     cursor.execute("""

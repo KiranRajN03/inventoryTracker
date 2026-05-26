@@ -2,7 +2,8 @@ from fastapi import FastAPI, APIRouter, HTTPException, Request, Response, Depend
 from dotenv import load_dotenv
 from pathlib import Path
 import os
-import sqlite3
+import psycopg2
+import psycopg2.extras
 import uuid
 from datetime import datetime, timezone, timedelta
 import bcrypt
@@ -17,22 +18,20 @@ from typing import List, Optional, Literal
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# SQLite connection
-# Use /tmp on Vercel as it's the only writable directory, otherwise local directory
-DB_PATH = os.environ.get('SQLITE_DB_PATH', '/tmp/inventory.db' if 'VERCEL' in os.environ else str(ROOT_DIR / 'inventory.db'))
+DATABASE_URL = os.environ.get('DATABASE_URL')
 
 def get_db_connection(init=True):
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
+    conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
     if init:
         try:
-            cursor = conn.cursor()
-            cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
-            if not cursor.fetchone():
-                conn.close()
-                init_db()
-                conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-                conn.row_factory = sqlite3.Row
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    SELECT table_name 
+                    FROM information_schema.tables 
+                    WHERE table_schema = 'public' AND table_name = 'users'
+                """)
+                if not cursor.fetchone():
+                    init_db()
         except Exception:
             pass
     return conn
@@ -77,7 +76,7 @@ def get_current_user(request: Request) -> dict:
         
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE id = ?", (payload["sub"],))
+        cursor.execute("SELECT * FROM users WHERE id = %s", (payload["sub"],))
         user_row = cursor.fetchone()
         conn.close()
         
@@ -191,7 +190,7 @@ def register(user: UserRegister, response: Response):
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT * FROM users WHERE email = ?", (email_lower,))
+    cursor.execute("SELECT * FROM users WHERE email = %s", (email_lower,))
     existing = cursor.fetchone()
     if existing:
         conn.close()
@@ -202,7 +201,7 @@ def register(user: UserRegister, response: Response):
     created_at = datetime.now(timezone.utc).isoformat()
     
     cursor.execute(
-        "INSERT INTO users (id, email, password_hash, name, role, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO users (id, email, password_hash, name, role, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
         (user_id, email_lower, password_hash, user.name, user.role, created_at)
     )
     conn.commit()
@@ -215,13 +214,13 @@ def register(user: UserRegister, response: Response):
     response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, samesite="none", max_age=604800, path="/")
     
     return {"_id": user_id, "email": email_lower, "name": user.name, "role": user.role, "created_at": created_at, "access_token": access_token}
-
+ 
 @api_router.post("/auth/login")
 def login(credentials: UserLogin, response: Response):
     email_lower = credentials.email.lower()
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE email = ?", (email_lower,))
+    cursor.execute("SELECT * FROM users WHERE email = %s", (email_lower,))
     user_row = cursor.fetchone()
     conn.close()
     
@@ -261,7 +260,7 @@ def create_product(product: ProductCreate, current_user: dict = Depends(get_curr
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT * FROM products WHERE sku = ?", (product.sku,))
+    cursor.execute("SELECT * FROM products WHERE sku = %s", (product.sku,))
     if cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=400, detail="SKU already exists")
@@ -270,7 +269,7 @@ def create_product(product: ProductCreate, current_user: dict = Depends(get_curr
     created_at = datetime.now(timezone.utc).isoformat()
     
     cursor.execute(
-        "INSERT INTO products (id, sku, name, description, low_stock_threshold, unit, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO products (id, sku, name, description, low_stock_threshold, unit, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
         (product_id, product.sku, product.name, product.description, product.low_stock_threshold, product.unit, created_at)
     )
     conn.commit()
@@ -311,7 +310,7 @@ def update_product(product_id: str, product: ProductCreate, current_user: dict =
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "UPDATE products SET sku=?, name=?, description=?, low_stock_threshold=?, unit=? WHERE id=?",
+        "UPDATE products SET sku=%s, name=%s, description=%s, low_stock_threshold=%s, unit=%s WHERE id=%s",
         (product.sku, product.name, product.description, product.low_stock_threshold, product.unit, product_id)
     )
     if cursor.rowcount == 0:
@@ -329,7 +328,7 @@ def delete_product(product_id: str, current_user: dict = Depends(get_current_use
     
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM products WHERE id=?", (product_id,))
+    cursor.execute("DELETE FROM products WHERE id=%s", (product_id,))
     if cursor.rowcount == 0:
         conn.close()
         raise HTTPException(status_code=404, detail="Product not found")
@@ -350,7 +349,7 @@ def create_location(location: LocationCreate, current_user: dict = Depends(get_c
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO locations (id, warehouse_id, zone, aisle, bin, capacity, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO locations (id, warehouse_id, zone, aisle, bin, capacity, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
         (location_id, location.warehouse_id, location.zone, location.aisle, location.bin, location.capacity, created_at)
     )
     conn.commit()
@@ -383,7 +382,7 @@ def update_location(location_id: str, location: LocationCreate, current_user: di
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "UPDATE locations SET warehouse_id=?, zone=?, aisle=?, bin=?, capacity=? WHERE id=?",
+        "UPDATE locations SET warehouse_id=%s, zone=%s, aisle=%s, bin=%s, capacity=%s WHERE id=%s",
         (location.warehouse_id, location.zone, location.aisle, location.bin, location.capacity, location_id)
     )
     if cursor.rowcount == 0:
@@ -401,7 +400,7 @@ def delete_location(location_id: str, current_user: dict = Depends(get_current_u
     
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM locations WHERE id=?", (location_id,))
+    cursor.execute("DELETE FROM locations WHERE id=%s", (location_id,))
     if cursor.rowcount == 0:
         conn.close()
         raise HTTPException(status_code=404, detail="Location not found")
@@ -416,12 +415,12 @@ def create_stock_transaction(transaction: StockLedgerCreate, current_user: dict 
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT id FROM products WHERE id=?", (transaction.product_id,))
+    cursor.execute("SELECT id FROM products WHERE id=%s", (transaction.product_id,))
     if not cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=404, detail="Product not found")
     
-    cursor.execute("SELECT id FROM locations WHERE id=?", (transaction.location_id,))
+    cursor.execute("SELECT id FROM locations WHERE id=%s", (transaction.location_id,))
     if not cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=404, detail="Location not found")
@@ -430,7 +429,7 @@ def create_stock_transaction(transaction: StockLedgerCreate, current_user: dict 
     timestamp = datetime.now(timezone.utc).isoformat()
     
     cursor.execute(
-        "INSERT INTO stock_ledger (id, product_id, location_id, user_id, transaction_type, quantity_change, reference_number, notes, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO stock_ledger (id, product_id, location_id, user_id, transaction_type, quantity_change, reference_number, notes, timestamp) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (ledger_id, transaction.product_id, transaction.location_id, current_user["_id"], transaction.transaction_type, transaction.quantity_change, transaction.reference_number, transaction.notes, timestamp)
     )
     conn.commit()
@@ -452,7 +451,7 @@ def create_stock_transaction(transaction: StockLedgerCreate, current_user: dict 
 def get_stock_ledger(current_user: dict = Depends(get_current_user), limit: int = 100):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM stock_ledger ORDER BY timestamp DESC LIMIT ?", (limit,))
+    cursor.execute("SELECT * FROM stock_ledger ORDER BY timestamp DESC LIMIT %s", (limit,))
     ledger = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return ledger
@@ -461,7 +460,7 @@ def get_stock_ledger(current_user: dict = Depends(get_current_user), limit: int 
 def get_product_stock_ledger(product_id: str, current_user: dict = Depends(get_current_user)):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM stock_ledger WHERE product_id=? ORDER BY timestamp DESC LIMIT 1000", (product_id,))
+    cursor.execute("SELECT * FROM stock_ledger WHERE product_id=%s ORDER BY timestamp DESC LIMIT 1000", (product_id,))
     ledger = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return ledger
@@ -472,28 +471,28 @@ def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT COUNT(*) FROM products")
-    total_products = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) as count FROM products")
+    total_products = cursor.fetchone()["count"]
     
-    cursor.execute("SELECT COUNT(*) FROM locations")
-    total_locations = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) as count FROM locations")
+    total_locations = cursor.fetchone()["count"]
     
-    cursor.execute("SELECT COALESCE(SUM(quantity_change), 0) FROM stock_ledger")
-    total_stock = cursor.fetchone()[0]
+    cursor.execute("SELECT COALESCE(SUM(quantity_change), 0) as total_stock FROM stock_ledger")
+    total_stock = cursor.fetchone()["total_stock"]
     
     query = """
     SELECT p.id
     FROM products p
     LEFT JOIN stock_ledger s ON p.id = s.product_id
-    GROUP BY p.id
+    GROUP BY p.id, p.low_stock_threshold
     HAVING COALESCE(SUM(s.quantity_change), 0) < p.low_stock_threshold
     """
     cursor.execute(query)
     low_stock_count = len(cursor.fetchall())
     
     seven_days_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-    cursor.execute("SELECT COUNT(*) FROM stock_ledger WHERE timestamp >= ?", (seven_days_ago,))
-    recent_transactions = cursor.fetchone()[0]
+    cursor.execute("SELECT COUNT(*) as count FROM stock_ledger WHERE timestamp >= %s", (seven_days_ago,))
+    recent_transactions = cursor.fetchone()["count"]
     
     conn.close()
     
@@ -504,7 +503,7 @@ def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
         "low_stock_count": low_stock_count,
         "recent_transactions": recent_transactions
     }
-
+ 
 @api_router.get("/dashboard/low-stock", response_model=List[LowStockAlert])
 def get_low_stock_alerts(current_user: dict = Depends(get_current_user)):
     conn = get_db_connection()
@@ -515,14 +514,14 @@ def get_low_stock_alerts(current_user: dict = Depends(get_current_user)):
            COALESCE(SUM(s.quantity_change), 0) as current_stock
     FROM products p
     LEFT JOIN stock_ledger s ON p.id = s.product_id
-    GROUP BY p.id
+    GROUP BY p.id, p.sku, p.name, p.low_stock_threshold
     HAVING COALESCE(SUM(s.quantity_change), 0) < p.low_stock_threshold
     """
     cursor.execute(query)
     alerts = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return alerts
-
+ 
 # ===== MOBILE SYNC ENDPOINTS =====
 @api_router.post("/sync/push")
 def sync_push(payload: SyncPayload, current_user: dict = Depends(get_current_user)):
@@ -531,11 +530,11 @@ def sync_push(payload: SyncPayload, current_user: dict = Depends(get_current_use
     
     synced_count = 0
     for transaction in payload.transactions:
-        cursor.execute("SELECT id FROM products WHERE id=?", (transaction.product_id,))
+        cursor.execute("SELECT id FROM products WHERE id=%s", (transaction.product_id,))
         if not cursor.fetchone():
             continue
         
-        cursor.execute("SELECT id FROM locations WHERE id=?", (transaction.location_id,))
+        cursor.execute("SELECT id FROM locations WHERE id=%s", (transaction.location_id,))
         if not cursor.fetchone():
             continue
         
@@ -543,7 +542,7 @@ def sync_push(payload: SyncPayload, current_user: dict = Depends(get_current_use
         timestamp = datetime.now(timezone.utc).isoformat()
         
         cursor.execute(
-            "INSERT INTO stock_ledger (id, product_id, location_id, user_id, transaction_type, quantity_change, reference_number, notes, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO stock_ledger (id, product_id, location_id, user_id, transaction_type, quantity_change, reference_number, notes, timestamp) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (ledger_id, transaction.product_id, transaction.location_id, current_user["_id"], transaction.transaction_type, transaction.quantity_change, transaction.reference_number, transaction.notes, timestamp)
         )
         synced_count += 1
@@ -551,14 +550,14 @@ def sync_push(payload: SyncPayload, current_user: dict = Depends(get_current_use
     conn.commit()
     conn.close()
     return {"message": f"Synced {synced_count} transactions"}
-
+ 
 @api_router.get("/sync/pull")
 def sync_pull(current_user: dict = Depends(get_current_user), last_sync: Optional[str] = None):
     conn = get_db_connection()
     cursor = conn.cursor()
     
     if last_sync:
-        cursor.execute("SELECT * FROM stock_ledger WHERE timestamp > ? LIMIT 500", (last_sync,))
+        cursor.execute("SELECT * FROM stock_ledger WHERE timestamp > %s LIMIT 500", (last_sync,))
     else:
         cursor.execute("SELECT * FROM stock_ledger LIMIT 500")
         
@@ -639,19 +638,19 @@ def init_db():
     admin_email = os.environ.get("ADMIN_EMAIL", "kiranrajn03@gmail.com")
     admin_password = os.environ.get("ADMIN_PASSWORD", "Admin@123")
     
-    cursor.execute("SELECT * FROM users WHERE email = ?", (admin_email,))
+    cursor.execute("SELECT * FROM users WHERE email = %s", (admin_email,))
     existing = cursor.fetchone()
     if existing is None:
         hashed = hash_password(admin_password)
         cursor.execute(
-            "INSERT INTO users (id, email, password_hash, name, role, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO users (id, email, password_hash, name, role, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
             (str(uuid.uuid4()), admin_email, hashed, "Admin", "admin", datetime.now(timezone.utc).isoformat())
         )
         conn.commit()
         logger.info(f"Admin user created: {admin_email}")
     elif existing["role"] != "admin" or not verify_password(admin_password, existing["password_hash"]):
         hashed = hash_password(admin_password)
-        cursor.execute("UPDATE users SET password_hash = ?, role = ? WHERE email = ?", (hashed, "admin", admin_email))
+        cursor.execute("UPDATE users SET password_hash = %s, role = %s WHERE email = %s", (hashed, "admin", admin_email))
         conn.commit()
         logger.info(f"Admin role/password enforced for: {admin_email}")
         

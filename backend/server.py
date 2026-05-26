@@ -649,11 +649,11 @@ def init_db():
         )
         conn.commit()
         logger.info(f"Admin user created: {admin_email}")
-    elif not verify_password(admin_password, existing["password_hash"]):
+    elif existing["role"] != "admin" or not verify_password(admin_password, existing["password_hash"]):
         hashed = hash_password(admin_password)
-        cursor.execute("UPDATE users SET password_hash = ? WHERE email = ?", (hashed, admin_email))
+        cursor.execute("UPDATE users SET password_hash = ?, role = ? WHERE email = ?", (hashed, "admin", admin_email))
         conn.commit()
-        logger.info(f"Admin password updated: {admin_email}")
+        logger.info(f"Admin role/password enforced for: {admin_email}")
         
     conn.close()
 

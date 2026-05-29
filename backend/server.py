@@ -94,13 +94,13 @@ def get_current_user(request: Request) -> dict:
 
 # ===== MODELS =====
 class UserRegister(BaseModel):
-    email: EmailStr
+    email: str
     password: str
     name: str
     role: Literal["admin", "worker"] = "worker"
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    email: str
     password: str
 
 class UserResponse(BaseModel):
@@ -635,8 +635,8 @@ def init_db():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_stock_product ON stock_ledger (product_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_stock_timestamp ON stock_ledger (timestamp)")
     
-    admin_email = os.environ.get("ADMIN_EMAIL", "kiranrajn03@gmail.com")
-    admin_password = os.environ.get("ADMIN_PASSWORD", "Admin@123")
+    admin_email = os.environ.get("ADMIN_EMAIL", "admin")
+    admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
     
     cursor.execute("SELECT * FROM users WHERE email = %s", (admin_email,))
     existing = cursor.fetchone()
@@ -666,8 +666,8 @@ async def startup_event():
         memory_dir = Path("/app/memory")
         memory_dir.mkdir(exist_ok=True, parents=True)
         with open(memory_dir / "test_credentials.md", "w") as f:
-            admin_email = os.environ.get("ADMIN_EMAIL", "admin@inventory.com")
-            admin_password = os.environ.get("ADMIN_PASSWORD", "Admin@123")
+            admin_email = os.environ.get("ADMIN_EMAIL", "admin")
+            admin_password = os.environ.get("ADMIN_PASSWORD", "admin123")
             f.write(f"# Test Credentials\n\n")
             f.write(f"## Admin Account\n")
             f.write(f"- Email: {admin_email}\n")

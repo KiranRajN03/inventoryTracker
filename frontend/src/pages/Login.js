@@ -48,10 +48,10 @@ export const Login = () => {
             <form onSubmit={handleSubmit} data-testid="login-form">
               <div className="space-y-4">
                 <div>
-                  <Label htmlFor="email" className="text-xs uppercase tracking-wider font-bold text-[#737373] mb-2 block">Email</Label>
+                  <Label htmlFor="email" className="text-xs uppercase tracking-wider font-bold text-[#737373] mb-2 block">Username or Email</Label>
                   <Input
                     id="email"
-                    type="email"
+                    type="text"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required

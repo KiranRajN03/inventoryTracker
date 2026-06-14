@@ -10,6 +10,7 @@ import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { toast } from 'sonner';
+import { BarcodeScanner } from '../components/BarcodeScanner';
 
 export const StockLedger = () => {
   const { user, logout } = useAuth();
@@ -47,6 +48,29 @@ export const StockLedger = () => {
       toast.error('Failed to load stock ledger');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleTransactionScan = (scannedText) => {
+    let sku = scannedText;
+    try {
+      const data = JSON.parse(scannedText);
+      if (data && data.sku) {
+        sku = data.sku;
+      }
+    } catch (e) {
+      // Not JSON, treat as raw text SKU
+    }
+    
+    const matchedProduct = products.find(p => p.sku.toLowerCase() === sku.toLowerCase());
+    if (matchedProduct) {
+      setFormData(prev => ({
+        ...prev,
+        product_id: matchedProduct.id
+      }));
+      toast.success(`Identified: ${matchedProduct.sku} - ${matchedProduct.name}`);
+    } else {
+      toast.error(`Scanned SKU "${sku}" not found in catalog`);
     }
   };
 
@@ -159,6 +183,7 @@ export const StockLedger = () => {
                   <DialogTitle className="text-2xl font-black tracking-tighter" style={{fontFamily: 'Cabinet Grotesk, sans-serif'}}>Record Stock Transaction</DialogTitle>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4" data-testid="transaction-form">
+                  <BarcodeScanner onScan={handleTransactionScan} label="Scan Product Barcode" />
                   <div>
                     <Label className="text-xs uppercase tracking-wider font-bold text-[#737373] mb-2 block">Product</Label>
                     <Select value={formData.product_id} onValueChange={(val) => setFormData({...formData, product_id: val})}>

@@ -9,6 +9,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { toast } from 'sonner';
+import { BarcodeScanner } from '../components/BarcodeScanner';
 
 export const Products = () => {
   const { user, logout } = useAuth();
@@ -38,6 +39,26 @@ export const Products = () => {
       toast.error('Failed to load products');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleProductScan = (scannedText) => {
+    try {
+      const data = JSON.parse(scannedText);
+      setFormData({
+        sku: data.sku || '',
+        name: data.name || '',
+        description: data.description || '',
+        low_stock_threshold: data.low_stock_threshold !== undefined ? parseInt(data.low_stock_threshold, 10) : 10,
+        unit: data.unit || 'units'
+      });
+      toast.success("Product details loaded from QR code!");
+    } catch (e) {
+      setFormData({
+        ...formData,
+        sku: scannedText
+      });
+      toast.info(`SKU populated: ${scannedText}`);
     }
   };
 
@@ -158,6 +179,9 @@ export const Products = () => {
                   </DialogTitle>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4" data-testid="product-form">
+                  {!editingProduct && (
+                    <BarcodeScanner onScan={handleProductScan} label="Scan SKU / QR for Details" />
+                  )}
                   <div>
                     <Label className="text-xs uppercase tracking-wider font-bold text-[#737373] mb-2 block">SKU</Label>
                     <Input value={formData.sku} onChange={(e) => setFormData({...formData, sku: e.target.value})} required className="border-[#E5E5E5] rounded-none" data-testid="product-sku-input" />

@@ -1,48 +1,158 @@
-// Placeholder App.js for React Native Mobile App
-// This demonstrates the structure for the Expo mobile app
-
-import React, { useState, useEffect } from 'react';
+import React, { useContext } from 'react';
+import { StatusBar } from 'expo-status-bar';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
-// Placeholder screens
-const LoginScreen = () => null;
-const HomeScreen = () => null;
-const ReceiveStockScreen = () => null;
-const PickStockScreen = () => null;
-const CycleCountScreen = () => null;
+// Components & Contexts
+import { AuthProvider, AuthContext } from './src/contexts/AuthContext';
+
+// Screens
+import LoginScreen from './src/screens/LoginScreen';
+import HomeScreen from './src/screens/HomeScreen';
+import ReceiveStockScreen from './src/screens/ReceiveStockScreen';
+import PickStockScreen from './src/screens/PickStockScreen';
+import CycleCountScreen from './src/screens/CycleCountScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
+// Tabs navigation configuration for authenticated workers
 function MainTabs() {
   return (
-    <Tab.Navigator>
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Receive" component={ReceiveStockScreen} />
-      <Tab.Screen name="Pick" component={PickStockScreen} />
-      <Tab.Screen name="Count" component={CycleCountScreen} />
+    <Tab.Navigator
+      screenOptions={{
+        tabBarActiveTintColor: '#002FA7', // Klein Blue
+        tabBarInactiveTintColor: '#888888',
+        tabBarStyle: {
+          borderTopWidth: 2,
+          borderTopColor: '#0A0A0A',
+          backgroundColor: '#FFFFFF',
+          height: 64,
+          paddingBottom: 8,
+          paddingTop: 8,
+        },
+        tabBarLabelStyle: {
+          fontFamily: 'JetBrains Mono',
+          fontSize: 10,
+          fontWeight: 'bold',
+        },
+        headerStyle: {
+          backgroundColor: '#0A0A0A',
+          borderBottomWidth: 1,
+          borderBottomColor: '#0A0A0A',
+          elevation: 0,
+          shadowOpacity: 0,
+        },
+        headerTitleStyle: {
+          fontFamily: 'Cabinet Grotesk',
+          fontSize: 16,
+          fontWeight: '900',
+          color: '#FFFFFF',
+          letterSpacing: 0.5,
+        },
+        headerTintColor: '#FFFFFF',
+      }}
+    >
+      <Tab.Screen 
+        name="Dashboard" 
+        component={HomeScreen} 
+        options={{
+          tabBarLabel: 'HOME',
+          headerTitle: 'OPERATOR TERMINAL',
+          tabBarIcon: ({ color, size }) => (
+            <View style={[styles.dotIcon, { backgroundColor: color }]} />
+          ),
+        }}
+      />
+      <Tab.Screen 
+        name="Receive" 
+        component={ReceiveStockScreen} 
+        options={{
+          tabBarLabel: 'RECEIVE',
+          headerTitle: 'INCOMING RECEIPT',
+          tabBarIcon: ({ color, size }) => (
+            <View style={[styles.dotIcon, { backgroundColor: color }]} />
+          ),
+        }}
+      />
+      <Tab.Screen 
+        name="Pick" 
+        component={PickStockScreen} 
+        options={{
+          tabBarLabel: 'PICK',
+          headerTitle: 'OUTBOUND PICKING',
+          tabBarIcon: ({ color, size }) => (
+            <View style={[styles.dotIcon, { backgroundColor: color }]} />
+          ),
+        }}
+      />
+      <Tab.Screen 
+        name="Count" 
+        component={CycleCountScreen} 
+        options={{
+          tabBarLabel: 'AUDIT',
+          headerTitle: 'CYCLE COUNTING',
+          tabBarIcon: ({ color, size }) => (
+            <View style={[styles.dotIcon, { backgroundColor: color }]} />
+          ),
+        }}
+      />
     </Tab.Navigator>
   );
 }
 
-export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+// Router Controller using Auth Context
+function AppNavigation() {
+  const { isAuthenticated, isLoading } = useContext(AuthContext);
+
+  if (isLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#002FA7" />
+      </View>
+    );
+  }
 
   return (
     <NavigationContainer>
-      <Stack.Navigator>
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!isAuthenticated ? (
           <Stack.Screen name="Login" component={LoginScreen} />
         ) : (
-          <Stack.Screen 
-            name="Main" 
-            component={MainTabs} 
-            options={{ headerShown: false }}
-          />
+          <Stack.Screen name="Main" component={MainTabs} />
         )}
       </Stack.Navigator>
     </NavigationContainer>
   );
 }
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <View style={styles.appContainer}>
+        <StatusBar style="auto" />
+        <AppNavigation />
+      </View>
+    </AuthProvider>
+  );
+}
+
+const styles = StyleSheet.create({
+  appContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  dotIcon: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+});

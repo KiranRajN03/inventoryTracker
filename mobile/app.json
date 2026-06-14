@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "Inventory Control",
+    "slug": "inventory-control",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.kiranrajn03.inventorycontrol",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow Inventory Control to access your camera to scan barcodes on the warehouse floor."
+      }
+    },
+    "android": {
+      "package": "com.kiranrajn03.inventorycontrol",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
+      },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Inventory Control to access your camera to scan barcodes on the warehouse floor."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "b27700d5-dd83-40ff-849e-ef2427cf3697"
+      }
+    }
+  }
+}

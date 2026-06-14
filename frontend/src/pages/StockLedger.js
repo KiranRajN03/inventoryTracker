@@ -53,7 +53,19 @@ export const StockLedger = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.post(`${API_URL}/api/stock/transaction`, formData, { withCredentials: true });
+      const qty = parseInt(formData.quantity_change, 10) || 0;
+      const finalQuantity = formData.transaction_type === 'RECEIVE'
+        ? Math.abs(qty)
+        : formData.transaction_type === 'PICK'
+          ? -Math.abs(qty)
+          : qty;
+
+      const payload = {
+        ...formData,
+        quantity_change: finalQuantity
+      };
+
+      await axios.post(`${API_URL}/api/stock/transaction`, payload, { withCredentials: true });
       toast.success('Transaction recorded successfully');
       setIsDialogOpen(false);
       setFormData({
@@ -189,7 +201,13 @@ export const StockLedger = () => {
                   </div>
                   <div>
                     <Label className="text-xs uppercase tracking-wider font-bold text-[#737373] mb-2 block">Quantity Change</Label>
-                    <Input type="number" value={formData.quantity_change} onChange={(e) => setFormData({...formData, quantity_change: parseInt(e.target.value)})} required className="border-[#E5E5E5] rounded-none" data-testid="transaction-quantity-input" />
+                    <Input type="number" value={formData.quantity_change} onChange={(e) => setFormData({...formData, quantity_change: parseInt(e.target.value) || 0})} required className="border-[#E5E5E5] rounded-none" data-testid="transaction-quantity-input" />
+                    {formData.transaction_type === 'RECEIVE' && (
+                      <p className="text-xs text-[#002FA7] font-semibold mt-1">Stock count will increase by {Math.abs(formData.quantity_change || 0)}</p>
+                    )}
+                    {formData.transaction_type === 'PICK' && (
+                      <p className="text-xs text-[#FF3B30] font-semibold mt-1">Stock count will decrease by {Math.abs(formData.quantity_change || 0)}</p>
+                    )}
                   </div>
                   <div>
                     <Label className="text-xs uppercase tracking-wider font-bold text-[#737373] mb-2 block">Reference # (optional)</Label>

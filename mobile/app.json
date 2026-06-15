@@ -38,6 +38,18 @@
         {
           "cameraPermission": "Allow Inventory Control to access your camera to scan barcodes on the warehouse floor."
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "packagingOptions": {
+              "jniLibs": {
+                "useLegacyPackaging": false
+              }
+            }
+          }
+        }
       ]
     ],
     "extra": {

@@ -23,7 +23,8 @@ export const Products = () => {
     name: '',
     description: '',
     low_stock_threshold: 10,
-    unit: 'units'
+    unit: 'units',
+    price: 0.0
   });
 
   useEffect(() => {
@@ -50,7 +51,8 @@ export const Products = () => {
         name: data.name || '',
         description: data.description || '',
         low_stock_threshold: data.low_stock_threshold !== undefined ? parseInt(data.low_stock_threshold, 10) : 10,
-        unit: data.unit || 'units'
+        unit: data.unit || 'units',
+        price: data.price !== undefined ? parseFloat(data.price) : 0.0
       });
       toast.success("Product details loaded from QR code!");
     } catch (e) {
@@ -74,7 +76,7 @@ export const Products = () => {
       }
       setIsDialogOpen(false);
       setEditingProduct(null);
-      setFormData({ sku: '', name: '', description: '', low_stock_threshold: 10, unit: 'units' });
+      setFormData({ sku: '', name: '', description: '', low_stock_threshold: 10, unit: 'units', price: 0.0 });
       fetchProducts();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to save product');
@@ -88,7 +90,8 @@ export const Products = () => {
       name: product.name,
       description: product.description || '',
       low_stock_threshold: product.low_stock_threshold,
-      unit: product.unit
+      unit: product.unit,
+      price: product.price || 0.0
     });
     setIsDialogOpen(true);
   };
@@ -152,6 +155,9 @@ export const Products = () => {
             <button onClick={() => navigate('/stock-ledger')} className="w-full text-left px-4 py-3 text-sm font-semibold hover:bg-[#F4F4F6]" data-testid="nav-ledger">
               Stock Ledger
             </button>
+            <button onClick={() => navigate('/worker')} className="w-full text-left px-4 py-3 text-sm font-semibold hover:bg-[#F4F4F6]" data-testid="nav-worker">
+              Warehouse Floor
+            </button>
           </nav>
         </aside>
 
@@ -202,6 +208,10 @@ export const Products = () => {
                     <Label className="text-xs uppercase tracking-wider font-bold text-[#737373] mb-2 block">Unit</Label>
                     <Input value={formData.unit} onChange={(e) => setFormData({...formData, unit: e.target.value})} required className="border-[#E5E5E5] rounded-none" data-testid="product-unit-input" />
                   </div>
+                  <div>
+                    <Label className="text-xs uppercase tracking-wider font-bold text-[#737373] mb-2 block">Unit Price ($)</Label>
+                    <Input type="number" step="0.01" min="0" value={formData.price} onChange={(e) => setFormData({...formData, price: parseFloat(e.target.value) || 0.0})} required className="border-[#E5E5E5] rounded-none" data-testid="product-price-input" />
+                  </div>
                   <Button type="submit" className="w-full bg-[#002FA7] hover:bg-[#001F70] text-white rounded-none" data-testid="product-submit-button">
                     {editingProduct ? 'Update Product' : 'Create Product'}
                   </Button>
@@ -217,6 +227,7 @@ export const Products = () => {
                 <tr className="border-b border-[#E5E5E5] bg-[#F4F4F6]">
                   <th className="text-left p-4 text-xs uppercase tracking-wider font-bold text-[#737373]">SKU</th>
                   <th className="text-left p-4 text-xs uppercase tracking-wider font-bold text-[#737373]">Product Name</th>
+                  <th className="text-left p-4 text-xs uppercase tracking-wider font-bold text-[#737373]">Unit Price</th>
                   <th className="text-left p-4 text-xs uppercase tracking-wider font-bold text-[#737373]">Current Stock</th>
                   <th className="text-left p-4 text-xs uppercase tracking-wider font-bold text-[#737373]">Threshold</th>
                   <th className="text-left p-4 text-xs uppercase tracking-wider font-bold text-[#737373]">Unit</th>
@@ -226,7 +237,7 @@ export const Products = () => {
               <tbody>
                 {products.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="text-center py-8 text-[#737373]">
+                    <td colSpan={7} className="text-center py-8 text-[#737373]">
                       No products yet. Add your first product to get started.
                     </td>
                   </tr>
@@ -235,6 +246,7 @@ export const Products = () => {
                     <tr key={product.id} className="border-b border-[#E5E5E5] last:border-0 hover:bg-[#F4F4F6]" data-testid={`product-row-${idx}`}>
                       <td className="p-4 mono font-semibold">{product.sku}</td>
                       <td className="p-4">{product.name}</td>
+                      <td className="p-4 mono font-semibold">${(product.price || 0).toFixed(2)}</td>
                       <td className="p-4 mono font-bold">{product.current_stock || 0}</td>
                       <td className="p-4 mono">{product.low_stock_threshold}</td>
                       <td className="p-4">{product.unit}</td>

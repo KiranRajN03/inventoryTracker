@@ -24,9 +24,17 @@ export async function initDatabase() {
       low_stock_threshold INTEGER,
       unit TEXT,
       current_stock INTEGER,
+      price REAL DEFAULT 0.0,
       created_at TEXT
     );
   `);
+
+  // Run SQLite migration to add price column if database was initialized in prior steps
+  try {
+    await db.execAsync("ALTER TABLE products_cache ADD COLUMN price REAL DEFAULT 0.0;");
+  } catch (e) {
+    // Column already exists or table was just created
+  }
 
   // 2. Create local location cache table
   await db.execAsync(`
@@ -66,9 +74,9 @@ export async function cacheProducts(products) {
   for (const p of products) {
     await db.runAsync(
       `INSERT OR REPLACE INTO products_cache 
-       (id, sku, name, description, low_stock_threshold, unit, current_stock, created_at) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [p.id, p.sku, p.name, p.description || '', p.low_stock_threshold, p.unit, p.current_stock || 0, p.created_at]
+       (id, sku, name, description, low_stock_threshold, unit, current_stock, price, created_at) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [p.id, p.sku, p.name, p.description || '', p.low_stock_threshold, p.unit, p.current_stock || 0, p.price || 0.0, p.created_at]
     );
   }
 }
@@ -147,5 +155,14 @@ export async function markAsSynced(txIds) {
   await db.runAsync(
     `UPDATE pending_transactions SET synced = 1 WHERE id IN (${placeholders})`,
     txIds
+  );
+}
+
+// Update local product cache price level representation immediately
+export async function updateCachedProductPrice(productId, newPrice) {
+  const db = await getDatabase();
+  await db.runAsync(
+    `UPDATE products_cache SET price = ? WHERE id = ?`,
+    [parseFloat(newPrice) || 0.0, productId]
   );
 }

@@ -101,6 +101,13 @@ export const Dashboard = () => {
             >
               Stock Ledger
             </button>
+            <button
+              onClick={() => navigate('/worker')}
+              className="w-full text-left px-4 py-3 text-sm font-semibold hover:bg-[#F4F4F6]"
+              data-testid="nav-worker"
+            >
+              Warehouse Floor
+            </button>
           </nav>
         </aside>
 

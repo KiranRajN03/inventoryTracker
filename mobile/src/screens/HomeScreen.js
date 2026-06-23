@@ -137,6 +137,45 @@ export default function HomeScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
+        {/* Admin only Management tools */}
+        {user?.role === 'admin' && (
+          <>
+            <Text style={styles.sectionHeading}>ADMINISTRATIVE MANAGEMENT</Text>
+            
+            <View style={styles.gridContainer}>
+              {/* MANAGE PRODUCTS */}
+              <TouchableOpacity 
+                style={styles.gridCard} 
+                onPress={() => navigation.navigate('ManageProducts')}
+              >
+                <Text style={styles.cardEmoji}>📦</Text>
+                <Text style={styles.cardTitle}>MANAGE PRODUCTS</Text>
+                <Text style={styles.cardDesc}>Add, edit, or delete items from the SKU catalog</Text>
+              </TouchableOpacity>
+
+              {/* MANAGE LOCATIONS */}
+              <TouchableOpacity 
+                style={styles.gridCard} 
+                onPress={() => navigation.navigate('ManageLocations')}
+              >
+                <Text style={styles.cardEmoji}>📍</Text>
+                <Text style={styles.cardTitle}>MANAGE LOCATIONS</Text>
+                <Text style={styles.cardDesc}>Add, edit, or delete warehouse storage bins</Text>
+              </TouchableOpacity>
+
+              {/* STOCK LEDGER */}
+              <TouchableOpacity 
+                style={styles.gridCard} 
+                onPress={() => navigation.navigate('StockLedger')}
+              >
+                <Text style={styles.cardEmoji}>📜</Text>
+                <Text style={styles.cardTitle}>STOCK LEDGER HISTORY</Text>
+                <Text style={styles.cardDesc}>Inspect chronological transaction timelines</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+
         {/* Sign Out Button */}
         <TouchableOpacity style={styles.logoutButton} onPress={logout}>
           <Text style={styles.logoutButtonText}>LOGOUT FROM TERMINAL</Text>

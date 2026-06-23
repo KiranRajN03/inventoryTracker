@@ -162,6 +162,9 @@ export const StockLedger = () => {
             <button onClick={() => navigate('/stock-ledger')} className="w-full text-left px-4 py-3 text-sm font-semibold bg-[#002FA7] text-white hover:bg-[#001F70]" data-testid="nav-ledger">
               Stock Ledger
             </button>
+            <button onClick={() => navigate('/worker')} className="w-full text-left px-4 py-3 text-sm font-semibold hover:bg-[#F4F4F6]" data-testid="nav-worker">
+              Warehouse Floor
+            </button>
           </nav>
         </aside>
 

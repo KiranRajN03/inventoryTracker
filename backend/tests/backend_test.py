@@ -17,6 +17,9 @@ def admin_session():
     s = requests.Session()
     r = s.post(f"{API}/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
     assert r.status_code == 200, f"Admin login failed: {r.status_code} {r.text}"
+    token = r.json().get("access_token")
+    if token:
+        s.headers.update({"Authorization": f"Bearer {token}"})
     return s
 
 
@@ -24,10 +27,18 @@ def admin_session():
 def worker_session():
     s = requests.Session()
     email = f"test_worker_{uuid.uuid4().hex[:8]}@example.com"
+    password = "Worker@123"
     r = s.post(f"{API}/auth/register", json={
-        "email": email, "password": "Worker@123", "name": "Test Worker", "role": "worker"
+        "email": email, "password": password, "name": "Test Worker", "role": "worker"
     })
     assert r.status_code == 200, f"Worker register failed: {r.status_code} {r.text}"
+    
+    # Explicit login to fetch token since register response strips it
+    lr = s.post(f"{API}/auth/login", json={"email": email, "password": password})
+    assert lr.status_code == 200, f"Worker login failed: {lr.status_code} {lr.text}"
+    token = lr.json().get("access_token")
+    if token:
+        s.headers.update({"Authorization": f"Bearer {token}"})
     s.email = email  # noqa
     return s
 

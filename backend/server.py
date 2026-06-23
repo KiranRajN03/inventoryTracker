@@ -117,6 +117,7 @@ class ProductCreate(BaseModel):
     description: Optional[str] = None
     low_stock_threshold: int = 10
     unit: str = "units"
+    price: float = 0.0
 
 class ProductResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -127,6 +128,7 @@ class ProductResponse(BaseModel):
     low_stock_threshold: int
     unit: str
     current_stock: int = 0
+    price: float = 0.0
     created_at: datetime
 
 class LocationCreate(BaseModel):
@@ -269,8 +271,8 @@ def create_product(product: ProductCreate, current_user: dict = Depends(get_curr
     created_at = datetime.now(timezone.utc).isoformat()
     
     cursor.execute(
-        "INSERT INTO products (id, sku, name, description, low_stock_threshold, unit, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-        (product_id, product.sku, product.name, product.description, product.low_stock_threshold, product.unit, created_at)
+        "INSERT INTO products (id, sku, name, description, low_stock_threshold, unit, price, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+        (product_id, product.sku, product.name, product.description, product.low_stock_threshold, product.unit, product.price, created_at)
     )
     conn.commit()
     conn.close()
@@ -282,6 +284,7 @@ def create_product(product: ProductCreate, current_user: dict = Depends(get_curr
         "description": product.description,
         "low_stock_threshold": product.low_stock_threshold,
         "unit": product.unit,
+        "price": product.price,
         "created_at": created_at,
         "current_stock": 0
     }
@@ -310,8 +313,8 @@ def update_product(product_id: str, product: ProductCreate, current_user: dict =
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "UPDATE products SET sku=%s, name=%s, description=%s, low_stock_threshold=%s, unit=%s WHERE id=%s",
-        (product.sku, product.name, product.description, product.low_stock_threshold, product.unit, product_id)
+        "UPDATE products SET sku=%s, name=%s, description=%s, low_stock_threshold=%s, unit=%s, price=%s WHERE id=%s",
+        (product.sku, product.name, product.description, product.low_stock_threshold, product.unit, product.price, product_id)
     )
     if cursor.rowcount == 0:
         conn.close()
@@ -605,6 +608,15 @@ def init_db():
         created_at TEXT
     )
     """)
+
+    cursor.execute("""
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name='products' AND column_name='price'
+    """)
+    if not cursor.fetchone():
+        cursor.execute("ALTER TABLE products ADD COLUMN price NUMERIC DEFAULT 0.00")
+        conn.commit()
     
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS locations (

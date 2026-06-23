@@ -14,9 +14,13 @@ import HomeScreen from './src/screens/HomeScreen';
 import ReceiveStockScreen from './src/screens/ReceiveStockScreen';
 import PickStockScreen from './src/screens/PickStockScreen';
 import CycleCountScreen from './src/screens/CycleCountScreen';
+import ManageProductsScreen from './src/screens/ManageProductsScreen';
+import ManageLocationsScreen from './src/screens/ManageLocationsScreen';
+import StockLedgerScreen from './src/screens/StockLedgerScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
+
 
 // Tabs navigation configuration for authenticated workers
 function MainTabs() {
@@ -121,7 +125,42 @@ function AppNavigation() {
         {!isAuthenticated ? (
           <Stack.Screen name="Login" component={LoginScreen} />
         ) : (
-          <Stack.Screen name="Main" component={MainTabs} />
+          <>
+            <Stack.Screen name="Main" component={MainTabs} />
+            <Stack.Screen 
+              name="ManageProducts" 
+              component={ManageProductsScreen} 
+              options={{ 
+                headerShown: true, 
+                title: 'PRODUCT MANAGEMENT',
+                headerStyle: { backgroundColor: '#0A0A0A' },
+                headerTitleStyle: { fontFamily: 'Cabinet Grotesk', fontSize: 14, fontWeight: '900', color: '#FFFFFF' },
+                headerTintColor: '#FFFFFF'
+              }} 
+            />
+            <Stack.Screen 
+              name="ManageLocations" 
+              component={ManageLocationsScreen} 
+              options={{ 
+                headerShown: true, 
+                title: 'LOCATION MANAGEMENT',
+                headerStyle: { backgroundColor: '#0A0A0A' },
+                headerTitleStyle: { fontFamily: 'Cabinet Grotesk', fontSize: 14, fontWeight: '900', color: '#FFFFFF' },
+                headerTintColor: '#FFFFFF'
+              }} 
+            />
+            <Stack.Screen 
+              name="StockLedger" 
+              component={StockLedgerScreen} 
+              options={{ 
+                headerShown: true, 
+                title: 'STOCK LEDGER HISTORY',
+                headerStyle: { backgroundColor: '#0A0A0A' },
+                headerTitleStyle: { fontFamily: 'Cabinet Grotesk', fontSize: 14, fontWeight: '900', color: '#FFFFFF' },
+                headerTintColor: '#FFFFFF'
+              }} 
+            />
+          </>
         )}
       </Stack.Navigator>
     </NavigationContainer>

@@ -1,7 +1,8 @@
 import React, { createContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../utils/api';
-import { initDatabase, pullFreshMasterData } from '../utils/database';
+import { initDatabase } from '../utils/database';
+import { pullFreshMasterData } from '../utils/syncQueue';
 
 export const AuthContext = createContext();
 

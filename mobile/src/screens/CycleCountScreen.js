@@ -14,8 +14,10 @@ import BarcodeScanner from '../components/BarcodeScanner';
 import { 
   getCachedProductBySKU, 
   getCachedLocations, 
-  addPendingTransaction 
+  addPendingTransaction,
+  updateCachedProductPrice
 } from '../utils/database';
+import api from '../utils/api';
 
 export default function CycleCountScreen({ navigation }) {
   const [scannedSKU, setScannedSKU] = useState('');
@@ -24,6 +26,7 @@ export default function CycleCountScreen({ navigation }) {
   const [locations, setLocations] = useState([]);
   const [selectedLocationId, setSelectedLocationId] = useState('');
   const [actualCount, setActualCount] = useState('');
+  const [price, setPrice] = useState('0.00');
   const [notes, setNotes] = useState('');
 
   // Load locations from SQLite on startup
@@ -48,8 +51,10 @@ export default function CycleCountScreen({ navigation }) {
       const matched = await getCachedProductBySKU(sku);
       if (matched) {
         setProduct(matched);
+        setPrice(matched.price?.toString() || '0.00');
       } else {
         setProduct(null);
+        setPrice('0.00');
         Alert.alert(
           'SKU NOT FOUND',
           `The SKU "${sku}" was not found in the local database cache. Run a sync on the dashboard to pull fresh data.`,
@@ -77,30 +82,50 @@ export default function CycleCountScreen({ navigation }) {
       return;
     }
 
-    // Dynamic audit calculation: Adjustment = counted_amount - current_in_memory_stock
-    const currentStock = product.current_stock;
-    const adjustment = parsedCount - currentStock;
-
-    if (adjustment === 0) {
-      Alert.alert(
-        'AUDIT MATCH',
-        `Physical count matches system representation (${parsedCount} units). No adjustment transaction required.`,
-        [
-          { 
-            text: 'OK', 
-            onPress: () => {
-              setScannedSKU('');
-              setProduct(null);
-              setActualCount('');
-              setNotes('');
-            } 
-          }
-        ]
-      );
-      return;
-    }
+    const newPriceVal = parseFloat(price) || 0.0;
 
     try {
+      // 1. Update product price in master catalog (online)
+      try {
+        await api.put(`/products/${product.id}`, {
+          sku: product.sku,
+          name: product.name,
+          description: product.description || '',
+          low_stock_threshold: product.low_stock_threshold,
+          unit: product.unit,
+          price: newPriceVal
+        });
+      } catch (err) {
+        console.log("Failed to update product price online, cache will sync later", err);
+      }
+
+      // 2. Update local SQLite cache
+      await updateCachedProductPrice(product.id, newPriceVal);
+
+      // Dynamic audit calculation: Adjustment = counted_amount - current_in_memory_stock
+      const currentStock = product.current_stock;
+      const adjustment = parsedCount - currentStock;
+
+      if (adjustment === 0) {
+        Alert.alert(
+          'AUDIT MATCH',
+          `Physical count matches system representation (${parsedCount} units). No adjustment transaction required.`,
+          [
+            { 
+              text: 'OK', 
+              onPress: () => {
+                setScannedSKU('');
+                setProduct(null);
+                setActualCount('');
+                setPrice('0.00');
+                setNotes('');
+              } 
+            }
+          ]
+        );
+        return;
+      }
+
       const transaction = {
         product_id: product.id,
         location_id: selectedLocationId,
@@ -112,7 +137,6 @@ export default function CycleCountScreen({ navigation }) {
 
       await addPendingTransaction(transaction);
       
-      const absAdj = Math.abs(adjustment);
       const direction = adjustment > 0 ? 'surplus (+)' : 'deficit (-)';
       
       Alert.alert(
@@ -126,6 +150,7 @@ export default function CycleCountScreen({ navigation }) {
               setScannedSKU('');
               setProduct(null);
               setActualCount('');
+              setPrice('0.00');
               setNotes('');
             } 
           }
@@ -158,11 +183,35 @@ export default function CycleCountScreen({ navigation }) {
                 <Text style={styles.productName}>{product.name}</Text>
                 <Text style={styles.productSku}>SKU: {product.sku} | Unit: {product.unit}</Text>
                 <Text style={styles.productStock}>System Stock Level: {product.current_stock} units</Text>
+                <Text style={styles.productPriceText}>Current Unit Price: ${(product.price ?? 0).toFixed(2)} | Current Total Value: ${((product.current_stock ?? 0) * (product.price ?? 0)).toFixed(2)}</Text>
               </View>
             ) : (
               <Text style={styles.noScanText}>NO PRODUCT ACTIVE. SCAN BARCODE OR TYPE INPUT ABOVE.</Text>
             )}
           </View>
+
+          {/* Price Management Section */}
+          {product && (
+            <View style={styles.priceContainer}>
+              <Text style={styles.inputLabel}>UNIT PRICE ($)</Text>
+              <TextInput
+                style={styles.textInput}
+                keyboardType="decimal-pad"
+                value={price}
+                onChangeText={setPrice}
+                placeholder="0.00"
+                placeholderTextColor="#888"
+              />
+              <View style={styles.liveCalculationBox}>
+                <Text style={styles.calcText}>
+                  Live Value of Stock (System): ${( (product.current_stock ?? 0) * (parseFloat(price) || 0) ).toFixed(2)}
+                </Text>
+                <Text style={styles.calcText}>
+                  Live Value of Stock (Counted): ${( (parseInt(actualCount, 10) || 0) * (parseFloat(price) || 0) ).toFixed(2)}
+                </Text>
+              </View>
+            </View>
+          )}
 
           {/* Location Selection Dropdown */}
           <View style={styles.inputGroup}>
@@ -364,5 +413,28 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 13,
     letterSpacing: 0.5,
+  },
+  productPriceText: {
+    fontFamily: 'JetBrains Mono',
+    fontSize: 11,
+    color: '#0A0A0A',
+    fontWeight: 'bold',
+    marginTop: 4,
+  },
+  priceContainer: {
+    gap: 6,
+  },
+  liveCalculationBox: {
+    borderWidth: 1,
+    borderColor: '#0A0A0A',
+    padding: 12,
+    backgroundColor: '#FFFFFF',
+    gap: 4,
+    marginTop: 4,
+  },
+  calcText: {
+    fontFamily: 'JetBrains Mono',
+    fontSize: 11,
+    color: '#0A0A0A',
   },
 });

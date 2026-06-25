@@ -98,6 +98,9 @@ class UserRegister(BaseModel):
     password: str
     name: str
     role: Literal["admin", "worker"] = "worker"
+    shop_id: Optional[str] = None
+    security_question: Optional[str] = "What is your shop name?"
+    security_answer: Optional[str] = "default"
 
 class UserLogin(BaseModel):
     email: str
@@ -109,7 +112,16 @@ class UserResponse(BaseModel):
     email: str
     name: str
     role: str
+    shop_id: Optional[str] = None
     created_at: datetime
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    email: str
+    security_answer: str
+    new_password: str
 
 class ProductCreate(BaseModel):
     sku: str
@@ -200,11 +212,17 @@ def register(user: UserRegister, response: Response):
     
     password_hash = hash_password(user.password)
     user_id = str(uuid.uuid4())
+    shop_id = user.shop_id
+    if not shop_id:
+        if user.role == "worker":
+            shop_id = "default-shop-uuid"
+        else:
+            shop_id = str(uuid.uuid4())
     created_at = datetime.now(timezone.utc).isoformat()
     
     cursor.execute(
-        "INSERT INTO users (id, email, password_hash, name, role, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
-        (user_id, email_lower, password_hash, user.name, user.role, created_at)
+        "INSERT INTO users (id, email, password_hash, name, role, shop_id, security_question, security_answer, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        (user_id, email_lower, password_hash, user.name, user.role, shop_id, user.security_question, user.security_answer, created_at)
     )
     conn.commit()
     conn.close()
@@ -215,7 +233,38 @@ def register(user: UserRegister, response: Response):
     response.set_cookie(key="access_token", value=access_token, httponly=True, secure=True, samesite="none", max_age=900, path="/")
     response.set_cookie(key="refresh_token", value=refresh_token, httponly=True, secure=True, samesite="none", max_age=604800, path="/")
     
-    return {"_id": user_id, "email": email_lower, "name": user.name, "role": user.role, "created_at": created_at, "access_token": access_token}
+    return {"_id": user_id, "email": email_lower, "name": user.name, "role": user.role, "shop_id": shop_id, "created_at": created_at, "access_token": access_token}
+
+@api_router.post("/auth/forgot-password")
+def forgot_password(req: ForgotPasswordRequest):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT security_question FROM users WHERE email = %s", (req.email.lower(),))
+    row = cursor.fetchone()
+    conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Email not registered")
+    return {"security_question": row["security_question"]}
+
+@api_router.post("/auth/reset-password")
+def reset_password(req: ResetPasswordRequest):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT security_answer FROM users WHERE email = %s", (req.email.lower(),))
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Email not registered")
+    
+    if (row["security_answer"] or "").strip().lower() != req.security_answer.strip().lower():
+        conn.close()
+        raise HTTPException(status_code=400, detail="Incorrect security answer")
+    
+    hashed = hash_password(req.new_password)
+    cursor.execute("UPDATE users SET password_hash = %s WHERE email = %s", (hashed, req.email.lower()))
+    conn.commit()
+    conn.close()
+    return {"message": "Password reset successfully"}
  
 @api_router.post("/auth/login")
 def login(credentials: UserLogin, response: Response):
@@ -262,7 +311,7 @@ def create_product(product: ProductCreate, current_user: dict = Depends(get_curr
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT * FROM products WHERE sku = %s", (product.sku,))
+    cursor.execute("SELECT * FROM products WHERE sku = %s AND shop_id = %s", (product.sku, current_user["shop_id"]))
     if cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=400, detail="SKU already exists")
@@ -271,8 +320,8 @@ def create_product(product: ProductCreate, current_user: dict = Depends(get_curr
     created_at = datetime.now(timezone.utc).isoformat()
     
     cursor.execute(
-        "INSERT INTO products (id, sku, name, description, low_stock_threshold, unit, price, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-        (product_id, product.sku, product.name, product.description, product.low_stock_threshold, product.unit, product.price, created_at)
+        "INSERT INTO products (id, sku, name, description, low_stock_threshold, unit, price, shop_id, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        (product_id, product.sku, product.name, product.description, product.low_stock_threshold, product.unit, product.price, current_user["shop_id"], created_at)
     )
     conn.commit()
     conn.close()
@@ -297,10 +346,11 @@ def get_products(current_user: dict = Depends(get_current_user)):
     query = """
     SELECT p.*, COALESCE(SUM(s.quantity_change), 0) as current_stock
     FROM products p
-    LEFT JOIN stock_ledger s ON p.id = s.product_id
+    LEFT JOIN stock_ledger s ON p.id = s.product_id AND s.shop_id = %s
+    WHERE p.shop_id = %s
     GROUP BY p.id
     """
-    cursor.execute(query)
+    cursor.execute(query, (current_user["shop_id"], current_user["shop_id"]))
     products = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return products
@@ -313,8 +363,8 @@ def update_product(product_id: str, product: ProductCreate, current_user: dict =
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "UPDATE products SET sku=%s, name=%s, description=%s, low_stock_threshold=%s, unit=%s, price=%s WHERE id=%s",
-        (product.sku, product.name, product.description, product.low_stock_threshold, product.unit, product.price, product_id)
+        "UPDATE products SET sku=%s, name=%s, description=%s, low_stock_threshold=%s, unit=%s, price=%s WHERE id=%s AND shop_id=%s",
+        (product.sku, product.name, product.description, product.low_stock_threshold, product.unit, product.price, product_id, current_user["shop_id"])
     )
     if cursor.rowcount == 0:
         conn.close()
@@ -331,7 +381,7 @@ def delete_product(product_id: str, current_user: dict = Depends(get_current_use
     
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM products WHERE id=%s", (product_id,))
+    cursor.execute("DELETE FROM products WHERE id=%s AND shop_id=%s", (product_id, current_user["shop_id"]))
     if cursor.rowcount == 0:
         conn.close()
         raise HTTPException(status_code=404, detail="Product not found")
@@ -352,8 +402,8 @@ def create_location(location: LocationCreate, current_user: dict = Depends(get_c
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO locations (id, warehouse_id, zone, aisle, bin, capacity, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-        (location_id, location.warehouse_id, location.zone, location.aisle, location.bin, location.capacity, created_at)
+        "INSERT INTO locations (id, warehouse_id, zone, aisle, bin, capacity, shop_id, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+        (location_id, location.warehouse_id, location.zone, location.aisle, location.bin, location.capacity, current_user["shop_id"], created_at)
     )
     conn.commit()
     conn.close()
@@ -372,7 +422,7 @@ def create_location(location: LocationCreate, current_user: dict = Depends(get_c
 def get_locations(current_user: dict = Depends(get_current_user)):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM locations")
+    cursor.execute("SELECT * FROM locations WHERE shop_id = %s", (current_user["shop_id"],))
     locations = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return locations
@@ -385,8 +435,8 @@ def update_location(location_id: str, location: LocationCreate, current_user: di
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute(
-        "UPDATE locations SET warehouse_id=%s, zone=%s, aisle=%s, bin=%s, capacity=%s WHERE id=%s",
-        (location.warehouse_id, location.zone, location.aisle, location.bin, location.capacity, location_id)
+        "UPDATE locations SET warehouse_id=%s, zone=%s, aisle=%s, bin=%s, capacity=%s WHERE id=%s AND shop_id=%s",
+        (location.warehouse_id, location.zone, location.aisle, location.bin, location.capacity, location_id, current_user["shop_id"])
     )
     if cursor.rowcount == 0:
         conn.close()
@@ -403,7 +453,7 @@ def delete_location(location_id: str, current_user: dict = Depends(get_current_u
     
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM locations WHERE id=%s", (location_id,))
+    cursor.execute("DELETE FROM locations WHERE id=%s AND shop_id=%s", (location_id, current_user["shop_id"]))
     if cursor.rowcount == 0:
         conn.close()
         raise HTTPException(status_code=404, detail="Location not found")
@@ -418,12 +468,14 @@ def create_stock_transaction(transaction: StockLedgerCreate, current_user: dict 
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT id FROM products WHERE id=%s", (transaction.product_id,))
+    # Check if product belongs to user's shop
+    cursor.execute("SELECT id FROM products WHERE id=%s AND shop_id=%s", (transaction.product_id, current_user["shop_id"]))
     if not cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=404, detail="Product not found")
     
-    cursor.execute("SELECT id FROM locations WHERE id=%s", (transaction.location_id,))
+    # Check if location belongs to user's shop
+    cursor.execute("SELECT id FROM locations WHERE id=%s AND shop_id=%s", (transaction.location_id, current_user["shop_id"]))
     if not cursor.fetchone():
         conn.close()
         raise HTTPException(status_code=404, detail="Location not found")
@@ -432,8 +484,8 @@ def create_stock_transaction(transaction: StockLedgerCreate, current_user: dict 
     timestamp = datetime.now(timezone.utc).isoformat()
     
     cursor.execute(
-        "INSERT INTO stock_ledger (id, product_id, location_id, user_id, transaction_type, quantity_change, reference_number, notes, timestamp) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-        (ledger_id, transaction.product_id, transaction.location_id, current_user["_id"], transaction.transaction_type, transaction.quantity_change, transaction.reference_number, transaction.notes, timestamp)
+        "INSERT INTO stock_ledger (id, product_id, location_id, user_id, transaction_type, quantity_change, reference_number, notes, shop_id, timestamp) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        (ledger_id, transaction.product_id, transaction.location_id, current_user["_id"], transaction.transaction_type, transaction.quantity_change, transaction.reference_number, transaction.notes, current_user["shop_id"], timestamp)
     )
     conn.commit()
     conn.close()
@@ -454,7 +506,7 @@ def create_stock_transaction(transaction: StockLedgerCreate, current_user: dict 
 def get_stock_ledger(current_user: dict = Depends(get_current_user), limit: int = 100):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM stock_ledger ORDER BY timestamp DESC LIMIT %s", (limit,))
+    cursor.execute("SELECT * FROM stock_ledger WHERE shop_id=%s ORDER BY timestamp DESC LIMIT %s", (current_user["shop_id"], limit))
     ledger = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return ledger
@@ -463,7 +515,7 @@ def get_stock_ledger(current_user: dict = Depends(get_current_user), limit: int 
 def get_product_stock_ledger(product_id: str, current_user: dict = Depends(get_current_user)):
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM stock_ledger WHERE product_id=%s ORDER BY timestamp DESC LIMIT 1000", (product_id,))
+    cursor.execute("SELECT * FROM stock_ledger WHERE product_id=%s AND shop_id=%s ORDER BY timestamp DESC LIMIT 1000", (product_id, current_user["shop_id"]))
     ledger = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return ledger
@@ -474,27 +526,28 @@ def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("SELECT COUNT(*) as count FROM products")
+    cursor.execute("SELECT COUNT(*) as count FROM products WHERE shop_id = %s", (current_user["shop_id"],))
     total_products = cursor.fetchone()["count"]
     
-    cursor.execute("SELECT COUNT(*) as count FROM locations")
+    cursor.execute("SELECT COUNT(*) as count FROM locations WHERE shop_id = %s", (current_user["shop_id"],))
     total_locations = cursor.fetchone()["count"]
     
-    cursor.execute("SELECT COALESCE(SUM(quantity_change), 0) as total_stock FROM stock_ledger")
+    cursor.execute("SELECT COALESCE(SUM(quantity_change), 0) as total_stock FROM stock_ledger WHERE shop_id = %s", (current_user["shop_id"],))
     total_stock = cursor.fetchone()["total_stock"]
     
     query = """
     SELECT p.id
     FROM products p
-    LEFT JOIN stock_ledger s ON p.id = s.product_id
+    LEFT JOIN stock_ledger s ON p.id = s.product_id AND s.shop_id = %s
+    WHERE p.shop_id = %s
     GROUP BY p.id, p.low_stock_threshold
     HAVING COALESCE(SUM(s.quantity_change), 0) < p.low_stock_threshold
     """
-    cursor.execute(query)
+    cursor.execute(query, (current_user["shop_id"], current_user["shop_id"]))
     low_stock_count = len(cursor.fetchall())
     
     seven_days_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-    cursor.execute("SELECT COUNT(*) as count FROM stock_ledger WHERE timestamp >= %s", (seven_days_ago,))
+    cursor.execute("SELECT COUNT(*) as count FROM stock_ledger WHERE timestamp >= %s AND shop_id = %s", (seven_days_ago, current_user["shop_id"]))
     recent_transactions = cursor.fetchone()["count"]
     
     conn.close()
@@ -516,11 +569,12 @@ def get_low_stock_alerts(current_user: dict = Depends(get_current_user)):
     SELECT p.id as product_id, p.sku, p.name as product_name, p.low_stock_threshold as threshold,
            COALESCE(SUM(s.quantity_change), 0) as current_stock
     FROM products p
-    LEFT JOIN stock_ledger s ON p.id = s.product_id
+    LEFT JOIN stock_ledger s ON p.id = s.product_id AND s.shop_id = %s
+    WHERE p.shop_id = %s
     GROUP BY p.id, p.sku, p.name, p.low_stock_threshold
     HAVING COALESCE(SUM(s.quantity_change), 0) < p.low_stock_threshold
     """
-    cursor.execute(query)
+    cursor.execute(query, (current_user["shop_id"], current_user["shop_id"]))
     alerts = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return alerts
@@ -533,11 +587,11 @@ def sync_push(payload: SyncPayload, current_user: dict = Depends(get_current_use
     
     synced_count = 0
     for transaction in payload.transactions:
-        cursor.execute("SELECT id FROM products WHERE id=%s", (transaction.product_id,))
+        cursor.execute("SELECT id FROM products WHERE id=%s AND shop_id=%s", (transaction.product_id, current_user["shop_id"]))
         if not cursor.fetchone():
             continue
         
-        cursor.execute("SELECT id FROM locations WHERE id=%s", (transaction.location_id,))
+        cursor.execute("SELECT id FROM locations WHERE id=%s AND shop_id=%s", (transaction.location_id, current_user["shop_id"]))
         if not cursor.fetchone():
             continue
         
@@ -545,8 +599,8 @@ def sync_push(payload: SyncPayload, current_user: dict = Depends(get_current_use
         timestamp = datetime.now(timezone.utc).isoformat()
         
         cursor.execute(
-            "INSERT INTO stock_ledger (id, product_id, location_id, user_id, transaction_type, quantity_change, reference_number, notes, timestamp) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
-            (ledger_id, transaction.product_id, transaction.location_id, current_user["_id"], transaction.transaction_type, transaction.quantity_change, transaction.reference_number, transaction.notes, timestamp)
+            "INSERT INTO stock_ledger (id, product_id, location_id, user_id, transaction_type, quantity_change, reference_number, notes, shop_id, timestamp) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (ledger_id, transaction.product_id, transaction.location_id, current_user["_id"], transaction.transaction_type, transaction.quantity_change, transaction.reference_number, transaction.notes, current_user["shop_id"], timestamp)
         )
         synced_count += 1
         
@@ -560,9 +614,9 @@ def sync_pull(current_user: dict = Depends(get_current_user), last_sync: Optiona
     cursor = conn.cursor()
     
     if last_sync:
-        cursor.execute("SELECT * FROM stock_ledger WHERE timestamp > %s LIMIT 500", (last_sync,))
+        cursor.execute("SELECT * FROM stock_ledger WHERE timestamp > %s AND shop_id=%s LIMIT 500", (last_sync, current_user["shop_id"]))
     else:
-        cursor.execute("SELECT * FROM stock_ledger LIMIT 500")
+        cursor.execute("SELECT * FROM stock_ledger WHERE shop_id=%s LIMIT 500", (current_user["shop_id"],))
         
     transactions = [dict(row) for row in cursor.fetchall()]
     conn.close()
@@ -593,6 +647,9 @@ def init_db():
         password_hash TEXT,
         name TEXT,
         role TEXT,
+        shop_id TEXT,
+        security_question TEXT,
+        security_answer TEXT,
         created_at TEXT
     )
     """)
@@ -605,6 +662,7 @@ def init_db():
         description TEXT,
         low_stock_threshold INTEGER,
         unit TEXT,
+        shop_id TEXT,
         created_at TEXT
     )
     """)
@@ -626,6 +684,7 @@ def init_db():
         aisle TEXT,
         bin TEXT,
         capacity INTEGER,
+        shop_id TEXT,
         created_at TEXT
     )
     """)
@@ -640,10 +699,41 @@ def init_db():
         quantity_change INTEGER,
         reference_number TEXT,
         notes TEXT,
+        shop_id TEXT,
         timestamp TEXT
     )
     """)
     
+    # Run migrations to ensure columns exist for existing databases
+    for col, col_type in [("shop_id", "TEXT"), ("security_question", "TEXT"), ("security_answer", "TEXT")]:
+        cursor.execute(f"""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='users' AND column_name='{col}'
+        """)
+        if not cursor.fetchone():
+            cursor.execute(f"ALTER TABLE users ADD COLUMN {col} {col_type}")
+            conn.commit()
+
+    for table in ["products", "locations", "stock_ledger"]:
+        cursor.execute(f"""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='{table}' AND column_name='shop_id'
+        """)
+        if not cursor.fetchone():
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN shop_id TEXT")
+            conn.commit()
+
+    # Backfill default values
+    default_shop_id = "default-shop-uuid"
+    cursor.execute("UPDATE users SET shop_id = %s WHERE shop_id IS NULL", (default_shop_id,))
+    cursor.execute("UPDATE users SET security_question = 'What is your shop name?', security_answer = 'default' WHERE security_question IS NULL")
+    cursor.execute("UPDATE products SET shop_id = %s WHERE shop_id IS NULL", (default_shop_id,))
+    cursor.execute("UPDATE locations SET shop_id = %s WHERE shop_id IS NULL", (default_shop_id,))
+    cursor.execute("UPDATE stock_ledger SET shop_id = %s WHERE shop_id IS NULL", (default_shop_id,))
+    conn.commit()
+
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_stock_product ON stock_ledger (product_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_stock_timestamp ON stock_ledger (timestamp)")
     
@@ -655,16 +745,30 @@ def init_db():
     if existing is None:
         hashed = hash_password(admin_password)
         cursor.execute(
-            "INSERT INTO users (id, email, password_hash, name, role, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
-            (str(uuid.uuid4()), admin_email, hashed, "Admin", "admin", datetime.now(timezone.utc).isoformat())
+            "INSERT INTO users (id, email, password_hash, name, role, shop_id, security_question, security_answer, created_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (str(uuid.uuid4()), admin_email, hashed, "Admin", "admin", default_shop_id, "What is your shop name?", "admin", datetime.now(timezone.utc).isoformat())
         )
         conn.commit()
         logger.info(f"Admin user created: {admin_email}")
-    elif existing["role"] != "admin" or not verify_password(admin_password, existing["password_hash"]):
-        hashed = hash_password(admin_password)
-        cursor.execute("UPDATE users SET password_hash = %s, role = %s WHERE email = %s", (hashed, "admin", admin_email))
-        conn.commit()
-        logger.info(f"Admin role/password enforced for: {admin_email}")
+    else:
+        updates = []
+        params = []
+        if existing.get("role") != "admin":
+            updates.append("role = %s")
+            params.append("admin")
+        if not verify_password(admin_password, existing.get("password_hash") or ""):
+            hashed = hash_password(admin_password)
+            updates.append("password_hash = %s")
+            params.append(hashed)
+        if not existing.get("security_question") or not existing.get("security_answer"):
+            updates.append("security_question = %s, security_answer = %s")
+            params.extend(["What is your shop name?", "admin"])
+        
+        if updates:
+            params.append(admin_email)
+            cursor.execute(f"UPDATE users SET {', '.join(updates)} WHERE email = %s", tuple(params))
+            conn.commit()
+            logger.info(f"Admin role/password/security details updated/enforced for: {admin_email}")
         
     conn.close()
 

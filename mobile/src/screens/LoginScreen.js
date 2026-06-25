@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { AuthContext } from '../contexts/AuthContext';
 
-export default function LoginScreen() {
+export default function LoginScreen({ navigation }) {
   const { login } = useContext(AuthContext);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -86,6 +86,14 @@ export default function LoginScreen() {
                 placeholderTextColor="#666"
               />
             </View>
+ 
+            {/* Forgot Password Link */}
+            <TouchableOpacity 
+              style={styles.forgotPasswordButton}
+              onPress={() => navigation.navigate('ForgotPassword')}
+            >
+              <Text style={styles.forgotPasswordText}>FORGOT PASSWORD?</Text>
+            </TouchableOpacity>
 
             {/* Sign In Trigger button */}
             <TouchableOpacity 
@@ -177,6 +185,17 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#0A0A0A',
     backgroundColor: '#F4F4F6',
+  },
+  forgotPasswordButton: {
+    alignSelf: 'flex-end',
+    marginTop: -8,
+    marginBottom: 4,
+  },
+  forgotPasswordText: {
+    fontFamily: 'JetBrains Mono',
+    color: '#002FA7',
+    fontSize: 11,
+    fontWeight: 'bold',
   },
   submitButton: {
     height: 64, // Glove friendly

@@ -2,7 +2,7 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Default target to local uvicorn instance
-const API_BASE_URL = 'http://10.0.2.2:8000/api'; // 10.0.2.2 is Android Emulator host loopback; change to localhost or verified dev IP for physical testing
+const API_BASE_URL = 'http://192.168.29.54:8000/api'; // Target local machine IP for physical testing
 
 const api = axios.create({
   baseURL: API_BASE_URL,

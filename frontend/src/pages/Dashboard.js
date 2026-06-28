@@ -6,10 +6,12 @@ import { useNavigate } from 'react-router-dom';
 import { Package, MapPin, AlertTriangle, Activity, LogOut } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Button } from '../components/ui/button';
+import { useTranslation } from '../contexts/LanguageContext';
 
 export const Dashboard = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const { lang, setLang, t } = useTranslation();
   const [stats, setStats] = useState(null);
   const [lowStockAlerts, setLowStockAlerts] = useState([]);
   const [recentTransactions, setRecentTransactions] = useState([]);
@@ -21,14 +23,14 @@ export const Dashboard = () => {
 
   const fetchDashboardData = async () => {
     try {
-      const [statsRes, alertsRes, ledgerRes] = await Promise.all([
+      const [statsRes, alertsRes, activityRes] = await Promise.all([
         axios.get(`${API_URL}/api/dashboard/stats`, { withCredentials: true }),
         axios.get(`${API_URL}/api/dashboard/low-stock`, { withCredentials: true }),
-        axios.get(`${API_URL}/api/stock/ledger?limit=10`, { withCredentials: true }),
+        axios.get(`${API_URL}/api/me/activity?limit=10`, { withCredentials: true }),
       ]);
       setStats(statsRes.data);
       setLowStockAlerts(alertsRes.data);
-      setRecentTransactions(ledgerRes.data);
+      setRecentTransactions(activityRes.data.items || []);
     } catch (err) {
       console.error('Failed to fetch dashboard data:', err);
     } finally {
@@ -59,10 +61,30 @@ export const Dashboard = () => {
         <div className="px-6 py-4 flex items-center justify-between">
           <h1 className="text-2xl font-black tracking-tighter" style={{fontFamily: 'Cabinet Grotesk, sans-serif'}}>Inventory Control</h1>
           <div className="flex items-center gap-4">
+            <select
+              value={lang}
+              onChange={async (e) => {
+                const newLang = e.target.value;
+                setLang(newLang);
+                try {
+                  await axios.put(`${API_URL}/api/me/profile`, { language_code: newLang }, { withCredentials: true });
+                } catch (err) {
+                  console.error('Failed to sync language preference with backend:', err);
+                }
+              }}
+              className="border border-[#E5E5E5] px-2 py-1 text-xs bg-white focus:outline-none focus:border-[#002FA7]"
+            >
+              <option value="en">English</option>
+              <option value="hi">हिन्दी</option>
+              <option value="kn">ಕನ್ನಡ</option>
+              <option value="ta">தமிழ்</option>
+              <option value="te">తెలుగు</option>
+              <option value="mr">मराठी</option>
+            </select>
             <span className="text-sm text-[#737373]">{user?.name} ({user?.role})</span>
             <Button onClick={handleLogout} variant="outline" size="sm" className="border-[#E5E5E5] rounded-none" data-testid="logout-button">
               <LogOut size={16} className="mr-2" />
-              Logout
+              {t('logout')}
             </Button>
           </div>
         </div>
@@ -78,35 +100,42 @@ export const Dashboard = () => {
               className="w-full text-left px-4 py-3 text-sm font-semibold bg-[#002FA7] text-white hover:bg-[#001F70]"
               data-testid="nav-dashboard"
             >
-              Dashboard
+              {t('dashboard')}
             </button>
             <button
               onClick={() => navigate('/products')}
               className="w-full text-left px-4 py-3 text-sm font-semibold hover:bg-[#F4F4F6]"
               data-testid="nav-products"
             >
-              Products
+              {t('products')}
             </button>
             <button
               onClick={() => navigate('/locations')}
               className="w-full text-left px-4 py-3 text-sm font-semibold hover:bg-[#F4F4F6]"
               data-testid="nav-locations"
             >
-              Locations
+              {t('locations')}
             </button>
             <button
               onClick={() => navigate('/stock-ledger')}
               className="w-full text-left px-4 py-3 text-sm font-semibold hover:bg-[#F4F4F6]"
               data-testid="nav-ledger"
             >
-              Stock Ledger
+              {t('ledger')}
+            </button>
+            <button
+              onClick={() => navigate('/reports')}
+              className="w-full text-left px-4 py-3 text-sm font-semibold hover:bg-[#F4F4F6]"
+              data-testid="nav-reports"
+            >
+              {t('reports')}
             </button>
             <button
               onClick={() => navigate('/worker')}
               className="w-full text-left px-4 py-3 text-sm font-semibold hover:bg-[#F4F4F6]"
               data-testid="nav-worker"
             >
-              Warehouse Floor
+              {t('floor')}
             </button>
           </nav>
         </aside>
@@ -114,42 +143,58 @@ export const Dashboard = () => {
         {/* Main Content */}
         <main className="flex-1 p-6">
           <div className="mb-6">
-            <h2 className="text-3xl font-black tracking-tighter mb-2" style={{fontFamily: 'Cabinet Grotesk, sans-serif'}}>Dashboard Overview</h2>
-            <p className="text-sm text-[#737373]">Real-time inventory metrics and alerts</p>
+            <h2 className="text-3xl font-black tracking-tighter mb-2" style={{fontFamily: 'Cabinet Grotesk, sans-serif'}}>{t('overview')}</h2>
+            <p className="text-sm text-[#737373]">{t('realtime')}</p>
           </div>
 
           {/* Stats Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 mb-6">
             <div className="bg-white border border-[#E5E5E5] p-6" data-testid="stat-products">
               <div className="flex items-center justify-between mb-4">
-                <Package size={24} className="text-[#002FA7]" />
-                <span className="text-xs uppercase tracking-wider font-bold text-[#737373]">Products</span>
+                <Package size={20} className="text-[#002FA7]" />
+                <span className="text-[10px] uppercase tracking-wider font-bold text-[#737373]">{t('products')}</span>
               </div>
-              <div className="text-3xl font-black mono">{stats?.total_products || 0}</div>
+              <div className="text-2xl font-black mono">{stats?.total_products || 0}</div>
             </div>
 
             <div className="bg-white border border-[#E5E5E5] p-6" data-testid="stat-locations">
               <div className="flex items-center justify-between mb-4">
-                <MapPin size={24} className="text-[#002FA7]" />
-                <span className="text-xs uppercase tracking-wider font-bold text-[#737373]">Locations</span>
+                <MapPin size={20} className="text-[#002FA7]" />
+                <span className="text-[10px] uppercase tracking-wider font-bold text-[#737373]">{t('locations')}</span>
               </div>
-              <div className="text-3xl font-black mono">{stats?.total_locations || 0}</div>
+              <div className="text-2xl font-black mono">{stats?.total_locations || 0}</div>
             </div>
 
             <div className="bg-white border border-[#E5E5E5] p-6" data-testid="stat-stock">
               <div className="flex items-center justify-between mb-4">
-                <Package size={24} className="text-[#34C759]" />
-                <span className="text-xs uppercase tracking-wider font-bold text-[#737373]">Total Stock</span>
+                <Package size={20} className="text-[#34C759]" />
+                <span className="text-[10px] uppercase tracking-wider font-bold text-[#737373]">{t('total_stock')}</span>
               </div>
-              <div className="text-3xl font-black mono">{stats?.total_stock || 0}</div>
+              <div className="text-2xl font-black mono">{stats?.total_stock || 0}</div>
             </div>
 
             <div className="bg-white border border-[#E5E5E5] p-6" data-testid="stat-alerts">
               <div className="flex items-center justify-between mb-4">
-                <AlertTriangle size={24} className="text-[#FF3B30]" />
-                <span className="text-xs uppercase tracking-wider font-bold text-[#737373]">Low Stock</span>
+                <AlertTriangle size={20} className="text-[#FF3B30]" />
+                <span className="text-[10px] uppercase tracking-wider font-bold text-[#737373]">{t('low_stock')}</span>
               </div>
-              <div className="text-3xl font-black mono">{stats?.low_stock_count || 0}</div>
+              <div className="text-2xl font-black mono">{stats?.low_stock_count || 0}</div>
+            </div>
+
+            <div className="bg-white border border-[#E5E5E5] p-6" data-testid="stat-value">
+              <div className="flex items-center justify-between mb-4">
+                <Package size={20} className="text-[#002FA7]" />
+                <span className="text-[10px] uppercase tracking-wider font-bold text-[#737373]">{t('stock_value')}</span>
+              </div>
+              <div className="text-2xl font-black mono">₹{(stats?.total_inventory_value || 0).toLocaleString()}</div>
+            </div>
+
+            <div className="bg-white border border-[#E5E5E5] p-6" data-testid="stat-expiring">
+              <div className="flex items-center justify-between mb-4">
+                <AlertTriangle size={20} className="text-[#FF9500]" />
+                <span className="text-[10px] uppercase tracking-wider font-bold text-[#737373]">{t('expiring_soon')}</span>
+              </div>
+              <div className="text-2xl font-black mono">{stats?.expiry_alert_count || 0}</div>
             </div>
           </div>
 
@@ -158,18 +203,18 @@ export const Dashboard = () => {
             <div className="bg-white border border-[#E5E5E5] p-6 mb-6" data-testid="low-stock-alerts">
               <div className="flex items-center gap-2 mb-4">
                 <AlertTriangle size={20} className="text-[#FF3B30]" />
-                <h3 className="text-xl font-bold tracking-tight">Low Stock Alerts</h3>
+                <h3 className="text-xl font-bold tracking-tight">{t('low_stock_alerts')}</h3>
               </div>
               <div className="space-y-2">
                 {lowStockAlerts.slice(0, 5).map((alert, idx) => (
                   <div key={idx} className="flex items-center justify-between py-3 border-b border-[#E5E5E5] last:border-0" data-testid={`alert-item-${idx}`}>
                     <div>
-                      <div className="font-semibold">{alert.product_name}</div>
-                      <div className="text-sm mono text-[#737373]">SKU: {alert.sku}</div>
+                      <div className="font-semibold text-sm">{alert.product_name}</div>
+                      <div className="text-xs mono text-[#737373]">SKU: {alert.sku}</div>
                     </div>
                     <div className="text-right">
-                      <div className="text-[#FF3B30] font-bold mono">{alert.current_stock} units</div>
-                      <div className="text-xs text-[#737373]">Threshold: {alert.threshold}</div>
+                      <div className="text-[#FF3B30] font-bold text-sm mono">{alert.current_stock} {t('units')}</div>
+                      <div className="text-xs text-[#737373]">{t('threshold')}: {alert.threshold}</div>
                     </div>
                   </div>
                 ))}
@@ -177,23 +222,25 @@ export const Dashboard = () => {
             </div>
           )}
 
-          {/* Recent Transactions */}
+          {/* Recent Operator Activity Feed */}
           <div className="bg-white border border-[#E5E5E5] p-6" data-testid="recent-transactions">
             <div className="flex items-center gap-2 mb-4">
               <Activity size={20} className="text-[#002FA7]" />
-              <h3 className="text-xl font-bold tracking-tight">Recent Transactions</h3>
+              <h3 className="text-xl font-bold tracking-tight">{t('recent_activity')}</h3>
             </div>
             <div className="space-y-2">
               {recentTransactions.length === 0 ? (
-                <p className="text-sm text-[#737373] py-4">No transactions yet</p>
+                <p className="text-sm text-[#737373] py-4">{t('no_activity')}</p>
               ) : (
                 recentTransactions.map((tx, idx) => (
                   <div key={idx} className="flex items-center justify-between py-3 border-b border-[#E5E5E5] last:border-0" data-testid={`transaction-item-${idx}`}>
                     <div>
-                      <div className="font-semibold text-sm">{tx.transaction_type}</div>
-                      <div className="text-xs text-[#737373]">{new Date(tx.timestamp).toLocaleString()}</div>
+                      <div className="font-semibold text-sm">{tx.product_name} ({tx.transaction_type})</div>
+                      <div className="text-xs text-[#737373]">By {tx.user_name} at {tx.location_path} • {new Date(tx.timestamp).toLocaleString()}</div>
                     </div>
-                    <div className="mono font-bold">{tx.quantity_change > 0 ? '+' : ''}{tx.quantity_change}</div>
+                    <div className={`mono font-bold text-sm ${tx.quantity_change > 0 ? 'text-[#34C759]' : 'text-[#FF3B30]'}`}>
+                      {tx.quantity_change > 0 ? '+' : ''}{tx.quantity_change}
+                    </div>
                   </div>
                 ))
               )}

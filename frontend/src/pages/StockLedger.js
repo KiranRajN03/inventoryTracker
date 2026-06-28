@@ -18,15 +18,22 @@ export const StockLedger = () => {
   const [ledger, setLedger] = useState([]);
   const [products, setProducts] = useState([]);
   const [locations, setLocations] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [formData, setFormData] = useState({
     product_id: '',
     location_id: '',
+    origin_location_id: '',
+    destination_location_id: '',
     transaction_type: 'RECEIVE',
     quantity_change: 0,
     reference_number: '',
-    notes: ''
+    notes: '',
+    supplier_id: '',
+    batch_number: '',
+    mfg_date: '',
+    expiry_date: ''
   });
 
   useEffect(() => {
@@ -35,14 +42,16 @@ export const StockLedger = () => {
 
   const fetchData = async () => {
     try {
-      const [ledgerRes, productsRes, locationsRes] = await Promise.all([
+      const [ledgerRes, productsRes, locationsRes, suppliersRes] = await Promise.all([
         axios.get(`${API_URL}/api/stock/ledger?limit=100`, { withCredentials: true }),
         axios.get(`${API_URL}/api/products`, { withCredentials: true }),
-        axios.get(`${API_URL}/api/locations`, { withCredentials: true })
+        axios.get(`${API_URL}/api/locations`, { withCredentials: true }),
+        axios.get(`${API_URL}/api/suppliers`, { withCredentials: true })
       ]);
       setLedger(ledgerRes.data);
       setProducts(productsRes.data);
       setLocations(locationsRes.data);
+      setSuppliers(suppliersRes.data);
     } catch (err) {
       console.error('Failed to fetch data:', err);
       toast.error('Failed to load stock ledger');
@@ -77,7 +86,7 @@ export const StockLedger = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const qty = parseInt(formData.quantity_change, 10) || 0;
+      const qty = parseFloat(formData.quantity_change) || 0.0;
       const finalQuantity = formData.transaction_type === 'RECEIVE'
         ? Math.abs(qty)
         : formData.transaction_type === 'PICK'
@@ -85,9 +94,26 @@ export const StockLedger = () => {
           : qty;
 
       const payload = {
-        ...formData,
-        quantity_change: finalQuantity
+        product_id: formData.product_id,
+        transaction_type: formData.transaction_type,
+        quantity_change: finalQuantity,
+        reference_number: formData.reference_number || null,
+        notes: formData.notes || null,
+        batch_number: formData.batch_number || null,
+        mfg_date: formData.mfg_date || null,
+        expiry_date: formData.expiry_date || null
       };
+
+      if (formData.transaction_type === 'TRANSFER') {
+        payload.origin_location_id = formData.origin_location_id;
+        payload.destination_location_id = formData.destination_location_id;
+      } else {
+        payload.location_id = formData.location_id;
+      }
+
+      if (formData.transaction_type === 'RECEIVE' && formData.supplier_id) {
+        payload.supplier_id = formData.supplier_id;
+      }
 
       await axios.post(`${API_URL}/api/stock/transaction`, payload, { withCredentials: true });
       toast.success('Transaction recorded successfully');
@@ -95,10 +121,16 @@ export const StockLedger = () => {
       setFormData({
         product_id: '',
         location_id: '',
+        origin_location_id: '',
+        destination_location_id: '',
         transaction_type: 'RECEIVE',
         quantity_change: 0,
         reference_number: '',
-        notes: ''
+        notes: '',
+        supplier_id: '',
+        batch_number: '',
+        mfg_date: '',
+        expiry_date: ''
       });
       fetchData();
     } catch (err) {
@@ -162,6 +194,9 @@ export const StockLedger = () => {
             <button onClick={() => navigate('/stock-ledger')} className="w-full text-left px-4 py-3 text-sm font-semibold bg-[#002FA7] text-white hover:bg-[#001F70]" data-testid="nav-ledger">
               Stock Ledger
             </button>
+            <button onClick={() => navigate('/reports')} className="w-full text-left px-4 py-3 text-sm font-semibold hover:bg-[#F4F4F6]" data-testid="nav-reports">
+              Reports
+            </button>
             <button onClick={() => navigate('/worker')} className="w-full text-left px-4 py-3 text-sm font-semibold hover:bg-[#F4F4F6]" data-testid="nav-worker">
               Warehouse Floor
             </button>
@@ -176,12 +211,27 @@ export const StockLedger = () => {
             </div>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
-                <Button className="bg-[#002FA7] hover:bg-[#001F70] text-white rounded-none" data-testid="add-transaction-button">
+                <Button className="bg-[#002FA7] hover:bg-[#001F70] text-white rounded-none" onClick={() => {
+                  setFormData({
+                    product_id: '',
+                    location_id: '',
+                    origin_location_id: '',
+                    destination_location_id: '',
+                    transaction_type: 'RECEIVE',
+                    quantity_change: 0,
+                    reference_number: '',
+                    notes: '',
+                    supplier_id: '',
+                    batch_number: '',
+                    mfg_date: '',
+                    expiry_date: ''
+                  });
+                }} data-testid="add-transaction-button">
                   <Plus size={16} className="mr-2" />
                   Record Transaction
                 </Button>
               </DialogTrigger>
-              <DialogContent className="border-[#E5E5E5] rounded-none max-w-md">
+              <DialogContent className="border-[#E5E5E5] rounded-none max-w-md max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle className="text-2xl font-black tracking-tighter" style={{fontFamily: 'Cabinet Grotesk, sans-serif'}}>Record Stock Transaction</DialogTitle>
                 </DialogHeader>
@@ -189,49 +239,118 @@ export const StockLedger = () => {
                   <BarcodeScanner onScan={handleTransactionScan} label="Scan Product Barcode" />
                   <div>
                     <Label className="text-xs uppercase tracking-wider font-bold text-[#737373] mb-2 block">Product</Label>
-                    <Select value={formData.product_id} onValueChange={(val) => setFormData({...formData, product_id: val})}>
-                      <SelectTrigger className="border-[#E5E5E5] rounded-none" data-testid="transaction-product-select">
-                        <SelectValue placeholder="Select product" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {products.map(p => (
-                          <SelectItem key={p.id} value={p.id}>{p.sku} - {p.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <select
+                      value={formData.product_id}
+                      onChange={(e) => setFormData({...formData, product_id: e.target.value})}
+                      required
+                      className="w-full border border-[#E5E5E5] px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#002FA7]"
+                    >
+                      <option value="">Select product</option>
+                      {products.map(p => (
+                        <option key={p.id} value={p.id}>{p.sku} - {p.name}</option>
+                      ))}
+                    </select>
                   </div>
-                  <div>
-                    <Label className="text-xs uppercase tracking-wider font-bold text-[#737373] mb-2 block">Location</Label>
-                    <Select value={formData.location_id} onValueChange={(val) => setFormData({...formData, location_id: val})}>
-                      <SelectTrigger className="border-[#E5E5E5] rounded-none" data-testid="transaction-location-select">
-                        <SelectValue placeholder="Select location" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {locations.map(l => (
-                          <SelectItem key={l.id} value={l.id}>{l.warehouse_id}-{l.zone}-{l.aisle}-{l.bin}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
+
                   <div>
                     <Label className="text-xs uppercase tracking-wider font-bold text-[#737373] mb-2 block">Transaction Type</Label>
-                    <Select value={formData.transaction_type} onValueChange={(val) => setFormData({...formData, transaction_type: val})}>
-                      <SelectTrigger className="border-[#E5E5E5] rounded-none" data-testid="transaction-type-select">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="RECEIVE">Receive</SelectItem>
-                        <SelectItem value="PICK">Pick</SelectItem>
-                        <SelectItem value="TRANSFER">Transfer</SelectItem>
-                        <SelectItem value="AUDIT">Audit</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <select
+                      value={formData.transaction_type}
+                      onChange={(e) => setFormData({...formData, transaction_type: e.target.value})}
+                      required
+                      className="w-full border border-[#E5E5E5] px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#002FA7]"
+                    >
+                      <option value="RECEIVE">Receive</option>
+                      <option value="PICK">Pick</option>
+                      <option value="TRANSFER">Transfer</option>
+                      <option value="AUDIT">Audit</option>
+                    </select>
                   </div>
+
+                  {formData.transaction_type === 'TRANSFER' ? (
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-xs uppercase tracking-wider font-bold text-[#737373] mb-2 block">Origin Location</Label>
+                        <select
+                          value={formData.origin_location_id}
+                          onChange={(e) => setFormData({...formData, origin_location_id: e.target.value})}
+                          required
+                          className="w-full border border-[#E5E5E5] px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#002FA7]"
+                        >
+                          <option value="">Select location</option>
+                          {locations.map(l => (
+                            <option key={l.id} value={l.id}>{l.warehouse_id}-{l.zone}-{l.aisle}-{l.bin}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <Label className="text-xs uppercase tracking-wider font-bold text-[#737373] mb-2 block">Destination Location</Label>
+                        <select
+                          value={formData.destination_location_id}
+                          onChange={(e) => setFormData({...formData, destination_location_id: e.target.value})}
+                          required
+                          className="w-full border border-[#E5E5E5] px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#002FA7]"
+                        >
+                          <option value="">Select location</option>
+                          {locations.map(l => (
+                            <option key={l.id} value={l.id}>{l.warehouse_id}-{l.zone}-{l.aisle}-{l.bin}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <Label className="text-xs uppercase tracking-wider font-bold text-[#737373] mb-2 block">Location</Label>
+                      <select
+                        value={formData.location_id}
+                        onChange={(e) => setFormData({...formData, location_id: e.target.value})}
+                        required
+                        className="w-full border border-[#E5E5E5] px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#002FA7]"
+                      >
+                        <option value="">Select location</option>
+                        {locations.map(l => (
+                          <option key={l.id} value={l.id}>{l.warehouse_id}-{l.zone}-{l.aisle}-{l.bin}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {formData.transaction_type === 'RECEIVE' && (
+                    <div>
+                      <Label className="text-xs uppercase tracking-wider font-bold text-[#737373] mb-2 block">Supplier (optional)</Label>
+                      <select
+                        value={formData.supplier_id}
+                        onChange={(e) => setFormData({...formData, supplier_id: e.target.value})}
+                        className="w-full border border-[#E5E5E5] px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#002FA7]"
+                      >
+                        <option value="">Select Supplier</option>
+                        {suppliers.map(s => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <Label className="text-[10px] uppercase font-bold text-[#737373] mb-1 block">Batch #</Label>
+                      <Input value={formData.batch_number} onChange={(e) => setFormData({...formData, batch_number: e.target.value})} className="border-[#E5E5E5] rounded-none px-2 text-xs" />
+                    </div>
+                    <div>
+                      <Label className="text-[10px] uppercase font-bold text-[#737373] mb-1 block">Mfg Date</Label>
+                      <Input type="date" value={formData.mfg_date} onChange={(e) => setFormData({...formData, mfg_date: e.target.value})} className="border-[#E5E5E5] rounded-none px-1 text-[10px]" />
+                    </div>
+                    <div>
+                      <Label className="text-[10px] uppercase font-bold text-[#737373] mb-1 block">Expiry Date</Label>
+                      <Input type="date" value={formData.expiry_date} onChange={(e) => setFormData({...formData, expiry_date: e.target.value})} className="border-[#E5E5E5] rounded-none px-1 text-[10px]" />
+                    </div>
+                  </div>
+
                   <div>
                     <Label className="text-xs uppercase tracking-wider font-bold text-[#737373] mb-2 block">Quantity Change</Label>
-                    <Input type="number" value={formData.quantity_change} onChange={(e) => setFormData({...formData, quantity_change: parseInt(e.target.value) || 0})} required className="border-[#E5E5E5] rounded-none" data-testid="transaction-quantity-input" />
+                    <Input type="number" step="any" value={formData.quantity_change} onChange={(e) => setFormData({...formData, quantity_change: e.target.value})} required className="border-[#E5E5E5] rounded-none" data-testid="transaction-quantity-input" />
                     {formData.transaction_type === 'RECEIVE' && (
-                      <p className="text-xs text-[#002FA7] font-semibold mt-1">Stock count will increase by {Math.abs(formData.quantity_change || 0)}</p>
+                      <p className="text-xs text-[#34C759] font-semibold mt-1">Stock count will increase by {Math.abs(formData.quantity_change || 0)}</p>
                     )}
                     {formData.transaction_type === 'PICK' && (
                       <p className="text-xs text-[#FF3B30] font-semibold mt-1">Stock count will decrease by {Math.abs(formData.quantity_change || 0)}</p>

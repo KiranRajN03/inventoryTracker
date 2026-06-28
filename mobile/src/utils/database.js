@@ -23,15 +23,21 @@ export async function initDatabase() {
       description TEXT,
       low_stock_threshold INTEGER,
       unit TEXT,
-      current_stock INTEGER,
+      current_stock REAL DEFAULT 0.0,
       price REAL DEFAULT 0.0,
+      barcode TEXT,
       created_at TEXT
     );
   `);
 
-  // Run SQLite migration to add price column if database was initialized in prior steps
+  // Run SQLite migration to add price and barcode columns if database was initialized in prior steps
   try {
     await db.execAsync("ALTER TABLE products_cache ADD COLUMN price REAL DEFAULT 0.0;");
+  } catch (e) {
+    // Column already exists or table was just created
+  }
+  try {
+    await db.execAsync("ALTER TABLE products_cache ADD COLUMN barcode TEXT;");
   } catch (e) {
     // Column already exists or table was just created
   }
@@ -56,7 +62,7 @@ export async function initDatabase() {
       product_id TEXT,
       location_id TEXT,
       transaction_type TEXT,
-      quantity_change INTEGER,
+      quantity_change REAL,
       reference_number TEXT,
       notes TEXT,
       timestamp TEXT,
@@ -74,9 +80,9 @@ export async function cacheProducts(products) {
   for (const p of products) {
     await db.runAsync(
       `INSERT OR REPLACE INTO products_cache 
-       (id, sku, name, description, low_stock_threshold, unit, current_stock, price, created_at) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [p.id, p.sku, p.name, p.description || '', p.low_stock_threshold, p.unit, p.current_stock || 0, p.price || 0.0, p.created_at]
+       (id, sku, name, description, low_stock_threshold, unit, current_stock, price, barcode, created_at) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [p.id, p.sku, p.name, p.description || '', p.low_stock_threshold, p.unit, p.current_stock || 0.0, p.price || 0.0, p.barcode || '', p.created_at]
     );
   }
 }

@@ -1,8 +1,8 @@
-"""Backend API regression tests for Inventory Management Platform."""
 import os
 import uuid
 import pytest
 import requests
+import psycopg2
 
 BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "http://localhost:8000").rstrip("/")
 API = f"{BASE_URL}/api"
@@ -12,15 +12,33 @@ ADMIN_PASSWORD = "Admin@123"
 
 
 # ---------- Fixtures ----------
+@pytest.fixture(scope="session", autouse=True)
+def clean_database():
+    db_url = os.environ.get("DATABASE_URL")
+    if not db_url:
+        from pathlib import Path
+        from dotenv import load_dotenv
+        backend_dir = Path(__file__).parent.parent
+        load_dotenv(backend_dir / '.env')
+        db_url = os.environ.get("DATABASE_URL")
+    if db_url:
+        conn = psycopg2.connect(db_url)
+        cursor = conn.cursor()
+        cursor.execute("TRUNCATE TABLE sessions, otp_store CASCADE;")
+        conn.commit()
+        conn.close()
 @pytest.fixture(scope="session")
 def admin_session():
     s = requests.Session()
+    # Clear any old sessions first by calling logout just in case
+    s.post(f"{API}/auth/logout")
     r = s.post(f"{API}/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
     assert r.status_code == 200, f"Admin login failed: {r.status_code} {r.text}"
     token = r.json().get("access_token")
     if token:
         s.headers.update({"Authorization": f"Bearer {token}"})
-    return s
+    yield s
+    s.post(f"{API}/auth/logout")
 
 
 @pytest.fixture(scope="session")
@@ -33,14 +51,14 @@ def worker_session():
     })
     assert r.status_code == 200, f"Worker register failed: {r.status_code} {r.text}"
     
-    # Explicit login to fetch token since register response strips it
     lr = s.post(f"{API}/auth/login", json={"email": email, "password": password})
     assert lr.status_code == 200, f"Worker login failed: {lr.status_code} {lr.text}"
     token = lr.json().get("access_token")
     if token:
         s.headers.update({"Authorization": f"Bearer {token}"})
     s.email = email  # noqa
-    return s
+    yield s
+    s.post(f"{API}/auth/logout")
 
 
 @pytest.fixture(scope="session")
@@ -64,14 +82,17 @@ def seed_data(admin_session):
 # ---------- AUTH ----------
 class TestAuth:
     def test_login_success(self):
-        r = requests.post(f"{API}/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
+        s = requests.Session()
+        r = s.post(f"{API}/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
         assert r.status_code == 200
         data = r.json()
         assert data.get("email") == ADMIN_EMAIL
         assert data.get("role") == "admin"
         assert "password_hash" not in data
-        # httpOnly cookie set
         assert "access_token" in r.cookies
+        token = data.get("access_token")
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        s.post(f"{API}/auth/logout", headers=headers)
 
     def test_login_invalid(self):
         r = requests.post(f"{API}/auth/login", json={"email": ADMIN_EMAIL, "password": "wrong"})
@@ -97,6 +118,10 @@ class TestAuth:
         data = r.json()
         assert data.get("email") == email
         assert data.get("role") == "worker"
+        # Since registration auto-logs in and sets session, let's clean up its session
+        token = data.get("access_token")
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        requests.post(f"{API}/auth/logout", headers=headers)
 
     def test_register_duplicate(self):
         r = requests.post(f"{API}/auth/register", json={
@@ -106,15 +131,20 @@ class TestAuth:
 
     def test_logout(self, admin_session):
         s = requests.Session()
-        s.post(f"{API}/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
-        r = s.post(f"{API}/auth/logout")
+        r_login = s.post(f"{API}/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
+        assert r_login.status_code == 200
+        token = r_login.json().get("access_token")
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        r = s.post(f"{API}/auth/logout", headers=headers)
         assert r.status_code == 200
 
     def test_bcrypt_hash_format(self):
         """Verify bcrypt hash format via login flow (cannot inspect DB directly here)."""
-        # Indirect check: login works which means bcrypt verify works
-        r = requests.post(f"{API}/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
-        assert r.status_code == 200
+        r_login = requests.post(f"{API}/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
+        assert r_login.status_code == 200
+        token = r_login.json().get("access_token")
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        requests.post(f"{API}/auth/logout", headers=headers)
 
 
 # ---------- PRODUCTS ----------

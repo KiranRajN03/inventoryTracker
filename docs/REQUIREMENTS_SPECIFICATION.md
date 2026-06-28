@@ -32,26 +32,33 @@ The system enforces role-based access control (RBAC) across two primary personas
 ## 3. Detailed Functional Specifications
 
 ### 3.1 Authentication & Session Management
-* **Multi-Session Concurrency**: To facilitate sharing operational accounts on the warehouse floor, the system allows up to **5 concurrent sessions** using the exact same username/credentials.
-* **Security & JWT**: Authentication is stateless via JSON Web Tokens (JWT). The token is set in an `httpOnly` cookie with fallback support for a standard `Authorization: Bearer` request header.
-* **Forgot Password Flow (Security Question)**:
-  - During registration, users choose a predefined security question and store a hashed/case-insensitive security answer.
-  - On password recovery, the user enters their email to fetch their security question, submits the case-insensitive answer, and sets a new password on successful validation.
+* **Multi-Session Concurrency**: Accounts are restricted to a maximum of **2 active concurrent sessions** (combining desktop and mobile) to secure operations. Attempting a 3rd concurrent login returns a `409 Conflict`.
+* **Security & JWT**: Authentication is stateless via JSON Web Tokens (JWT). The token payload embeds `session_id` to validate against active session registries.
+* **Forgot Password Flow (OTP Recovery)**:
+  - Password recovery uses a secure **6-digit numeric OTP** flow.
+  - On requesting recovery (`POST /api/auth/forgot-password`), a hashed OTP record is generated with a 15-minute expiration window.
+  - Verification (`POST /api/auth/verify-otp`) checks the matching OTP and exchanges it for a 10-minute temporary `reset_token`.
+  - Password resetting (`POST /api/auth/reset-password`) validates the token and updates the hashed credential.
 
 ### 3.2 Shop Isolation (Multi-Tenancy)
 * **Shop UUID**: Every database collection/table includes a `shop_id` attribute.
 * **Registration**: When an Admin registers, a new unique `shop_id` (UUID) is generated. Workers register by supplying the target Admin's `shop_id`.
-* **API Isolation**: All query operations on Products, Locations, and the Stock Ledger filter results dynamically using the active session's `shop_id`. This prevents cross-tenant data leaks.
+* **API Isolation**: All query operations filter results dynamically using the active session's `shop_id`.
 
 ### 3.3 Product Catalog (SKU Management)
 * **Attributes**:
   - `id` (Primary Key, UUID)
-  - `sku` (Unique string identifier, rendered in monospace)
+  - `sku` (Unique string identifier)
   - `name` (Display label)
   - `description` (Optional details)
-  - `low_stock_threshold` (Integer configuration)
-  - `unit` (Count units, e.g. `pcs`, `boxes`, `kg`)
+  - `low_stock_threshold` (Numeric configuration)
+  - `unit` (Count units, e.g. `pcs`, `kg`)
+  - `cost_price` (Decimal cost tracking)
+  - `selling_price` (Decimal selling price tracking)
+  - `category` (Optional category grouping)
+  - `barcode` (Barcode/UPC number)
   - `shop_id` (Foreign reference)
+  - `is_archived` (Soft deletion flag)
 * **Business Rules**:
   - SKUs must be unique within a single shop tenant.
   - Current stock is calculated dynamically:
@@ -66,7 +73,8 @@ The system enforces role-based access control (RBAC) across two primary personas
   - `bin` (Specific slot/shelf index, e.g. `04`)
   - `capacity` (Optional maximum inventory unit limit)
   - `shop_id` (Foreign reference)
-* **Path Indexing**: Locations are indexed using a hyphenated string identifier: `[warehouse_id]-[zone]-[aisle]-[bin]` (e.g. `WH1-A-12-04`).
+  - `is_archived` (Soft deletion flag)
+* **Path Indexing**: Locations are indexed using a hyphenated string identifier: `[warehouse_id]-[zone]-[aisle]-[bin]`.
 
 ### 3.5 Immutable Stock Ledger Transactions
 * **Attributes**:
@@ -75,27 +83,34 @@ The system enforces role-based access control (RBAC) across two primary personas
   - `location_id` (Foreign Key reference to Locations)
   - `user_id` (Foreign Key reference to Users)
   - `transaction_type` (Enum: `RECEIVE`, `PICK`, `TRANSFER`, `AUDIT`)
-  - `quantity_change` (Signed integer, positive or negative)
+  - `quantity_change` (Signed decimal quantity change)
   - `reference_number` (Optional invoice/PO/job reference string)
   - `notes` (Free-form operational text)
   - `timestamp` (UTC datetime of record entry)
+  - `paired_transfer_id` (Self-referencing link for atomic double-leg transfers)
+  - `supplier_id` (Foreign Key reference to Suppliers for receipts)
+  - `batch_number`, `mfg_date`, `expiry_date` (Batch lifecycle tracking attributes)
   - `shop_id` (Foreign reference)
 * **Transaction Types & Calculations**:
-  - **`RECEIVE`**: Positive quantity change ($+q$). Increases stock level.
-  - **`PICK`**: Negative quantity change ($-q$). Decreases stock level.
+  - **`RECEIVE`**: Positive quantity change ($+q$).
+  - **`PICK`**: Negative quantity change ($-q$).
   - **`TRANSFER`**: Creates two paired transaction records:
-    1. A negative delta ($-q$) at the origin location.
-    2. A positive delta ($+q$) at the destination location.
-  - **`AUDIT`**: Physical inventory reconciliation. An offset delta is calculated ($q_{\text{physical}} - q_{\text{ledger}}$) and written to adjust total stock to match the physical count.
+    1. A negative delta ($-q$) at the origin location (linked to the destination leg).
+    2. A positive delta ($+q$) at the destination location (linked to the origin leg).
+    Executed atomically inside a database transaction block.
+  - **`AUDIT`**: Physical inventory reconciliation. An offset delta is calculated ($q_{\text{physical}} - q_{\text{ledger}}$) and written to adjust total stock.
 
-### 3.6 Admin Web Dashboard
-* **KPI Metrics Panel**: Shows four key statistics:
-  1. **Total SKUs**: Total unique products registered in the shop.
-  2. **Total Bins**: Total warehouse locations mapped.
-  3. **Total Stock**: Sum of all ledger changes for the shop.
-  4. **Low Stock Count**: Number of SKUs where dynamic stock falls below the `low_stock_threshold`.
-* **Low Stock Alerts Widget**: Identifies and lists products whose dynamic current stock is less than or equal to their low-stock threshold.
-* **Recent Activity Feed**: Lists the 10 most recent transactions chronologically.
+### 3.6 Admin Web Dashboard & Reports
+* **KPI Metrics Panel**: Shows six key statistics:
+  1. **Total SKUs**: Total unique active products.
+  2. **Total Bins**: Total active warehouse locations.
+  3. **Total Stock**: Sum of all active ledger changes.
+  4. **Low Stock Count**: Number of SKUs falling below their threshold.
+  5. **Total Inventory Value**: Calculated as sum of $\text{current\_stock} \times \text{cost\_price}$ for all products.
+  6. **Expiring Batches (30d)**: Batches expiring within the next 30 days.
+* **Low Stock Alerts Widget**: Identifies products whose stock is below or equal to their warning thresholds.
+* **Operator Activity Feed**: Displays the 10 most recent actions performed in the shop.
+* **Stock Movement Compiler**: Allows generating a report detailing opening stock, received, picked, transferred, and closing stock per product over custom date windows with CSV export.
 
 ---
 
@@ -106,14 +121,14 @@ The system enforces role-based access control (RBAC) across two primary personas
 * High-contrast monochrome theme containing a stark barcode camera framing reticle.
 
 ### 4.2 Local SQLite Schema (Offline Cache)
-* **`products_cache`**: Caches SKU records and calculated stock levels locally.
+* **`products_cache`**: Caches SKU records, barcodes, and decimal stock levels locally.
 * **`locations_cache`**: Caches active storage paths.
-* **`pending_transactions`**: Stores transaction records logged offline.
+* **`pending_transactions`**: Stores transaction records logged offline (supports decimal quantities).
 
 ### 4.3 Sync Protocol
 When connection to the backend is active, the app processes sync actions:
-* **Sync Push**: Pushes all records queued in local `pending_transactions` to the backend endpoint `/api/sync/push`. On a successful 200 response, the local queue is cleared.
-* **Sync Pull**: Pulls the master list of product and location changes committed since the device's last pull timestamp from `/api/sync/pull`.
+* **Sync Push**: Pushes all records queued in local `pending_transactions` to `/api/sync/push`. On backend validation, skips and warns about `PICK`s that would breach zero stock levels.
+* **Sync Pull**: Pulls the master list of active product and location changes.
 
 ---
 
@@ -127,10 +142,10 @@ CREATE TABLE users (
     password_hash VARCHAR(255) NOT NULL,
     name VARCHAR(255) NOT NULL,
     role VARCHAR(50) NOT NULL CHECK (role IN ('admin', 'worker')),
-    security_question VARCHAR(255) NOT NULL,
-    security_answer_hash VARCHAR(255) NOT NULL,
     shop_id VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    phone VARCHAR(20),
+    language_code VARCHAR(10) DEFAULT 'en'
 );
 
 -- Create PRODUCTS Table
@@ -139,8 +154,14 @@ CREATE TABLE products (
     sku VARCHAR(100) NOT NULL,
     name VARCHAR(255) NOT NULL,
     description TEXT,
-    low_stock_threshold INTEGER DEFAULT 10,
+    low_stock_threshold NUMERIC(12,3) DEFAULT 10,
     unit VARCHAR(50) DEFAULT 'pcs',
+    price NUMERIC(12,2) DEFAULT 0,
+    cost_price NUMERIC(12,2) DEFAULT 0,
+    selling_price NUMERIC(12,2) DEFAULT 0,
+    category VARCHAR(100),
+    barcode VARCHAR(100),
+    is_archived BOOLEAN DEFAULT FALSE,
     shop_id VARCHAR(255) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uq_sku_shop UNIQUE (sku, shop_id)
@@ -154,9 +175,22 @@ CREATE TABLE locations (
     aisle VARCHAR(50) NOT NULL,
     bin VARCHAR(50) NOT NULL,
     capacity INTEGER,
+    is_archived BOOLEAN DEFAULT FALSE,
     shop_id VARCHAR(255) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uq_location_shop UNIQUE (warehouse_id, zone, aisle, bin, shop_id)
+);
+
+-- Create SUPPLIERS Table
+CREATE TABLE suppliers (
+    id VARCHAR(255) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    phone VARCHAR(50),
+    email VARCHAR(255),
+    address TEXT,
+    is_archived BOOLEAN DEFAULT FALSE,
+    shop_id VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Create STOCK_LEDGER Table
@@ -166,16 +200,51 @@ CREATE TABLE stock_ledger (
     location_id VARCHAR(255) REFERENCES locations(id) ON DELETE CASCADE,
     user_id VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
     transaction_type VARCHAR(50) NOT NULL CHECK (transaction_type IN ('RECEIVE', 'PICK', 'TRANSFER', 'AUDIT')),
-    quantity_change INTEGER NOT NULL,
+    quantity_change NUMERIC(12,3) NOT NULL,
     reference_number VARCHAR(100),
     notes TEXT,
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    timestamp VARCHAR(100),
+    paired_transfer_id VARCHAR(255) REFERENCES stock_ledger(id) ON DELETE SET NULL,
+    supplier_id VARCHAR(255) REFERENCES suppliers(id) ON DELETE SET NULL,
+    batch_number VARCHAR(100),
+    mfg_date DATE,
+    expiry_date DATE,
     shop_id VARCHAR(255) NOT NULL
 );
 
--- Create Indexes for Dynamic Aggregation Performance
+-- Create SESSIONS Table
+CREATE TABLE sessions (
+    id VARCHAR(255) PRIMARY KEY,
+    user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
+    device_label VARCHAR(255),
+    last_active TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create OTP_STORE Table
+CREATE TABLE otp_store (
+    id VARCHAR(255) PRIMARY KEY,
+    user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
+    otp_hash VARCHAR(255) NOT NULL,
+    reset_token VARCHAR(255),
+    expires_at TIMESTAMP NOT NULL,
+    used BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create NOTIFICATION_LOG Table
+CREATE TABLE notification_log (
+    id VARCHAR(255) PRIMARY KEY,
+    user_id VARCHAR(255) REFERENCES users(id) ON DELETE CASCADE,
+    channel VARCHAR(50) NOT NULL,
+    recipient VARCHAR(100) NOT NULL,
+    message TEXT NOT NULL,
+    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create Indexes for Performance
 CREATE INDEX idx_ledger_product_shop ON stock_ledger (product_id, shop_id);
-CREATE INDEX idx_ledger_timestamp ON stock_ledger (timestamp);
+CREATE INDEX idx_product_barcode_shop ON products (barcode, shop_id);
 ```
 
 ---
@@ -183,53 +252,46 @@ CREATE INDEX idx_ledger_timestamp ON stock_ledger (timestamp);
 ## 6. API Endpoint Contracts
 
 ### 6.1 Authentication Enclave
-* `POST /api/auth/register`
-  - **Payload**: `{ email, password, name, role, security_question, security_answer, shop_id? }`
-  - **Behavior**: Creates a user. If `role` is `'admin'`, generates a new `shop_id` unless one is provided.
-  - **Response**: `201 Created` with User data and session JWT.
-* `POST /api/auth/login`
-  - **Payload**: `{ email, password }`
-  - **Behavior**: Validates credentials. Sets JWT in `httpOnly` secure cookie.
-* `POST /api/auth/forgot-password`
-  - **Payload**: `{ email }`
-  - **Response**: `{ security_question }`
-* `POST /api/auth/reset-password`
-  - **Payload**: `{ email, security_answer, new_password }`
-  - **Behavior**: Resets credentials on case-insensitive security answer match.
+* `POST /api/auth/register` -> Payload: `{ email, password, name, role, phone, language_code }`
+* `POST /api/auth/login` -> Payload: `{ email, password }` (Restricts concurrency to $\le 2$).
+* `POST /api/auth/forgot-password` -> Payload: `{ email }` (Triggers SMS/email OTP).
+* `POST /api/auth/verify-otp` -> Payload: `{ email, otp }` (Returns `reset_token`).
+* `POST /api/auth/reset-password` -> Payload: `{ reset_token, new_password }`
+* `GET /api/auth/sessions` -> Returns active session devices.
+* `DELETE /api/auth/sessions/{session_id}` -> Revokes an active session.
 
-### 6.2 Catalog & Layout Enclaves
-* `GET /api/products`
-  - **Auth**: Required.
-  - **Behavior**: Retrieves products filtering by user `shop_id`. Dynamic stock is computed and returned inside `current_stock`.
-* `POST /api/products`
-  - **Auth**: Admin Only.
-  - **Payload**: `{ sku, name, description, low_stock_threshold, unit }`
-* `GET /api/locations`
-  - **Auth**: Required.
-  - **Behavior**: Retrieves storage locations filtering by user `shop_id`.
+### 6.2 Catalog, Locations & Suppliers
+* `GET /api/products` (Accepts `?include_archived=true`).
+* `POST /api/products` (Admin only).
+* `PUT /api/products/{id}` (Admin only).
+* `DELETE /api/products/{id}` (Soft deletes, blocks if referenced in ledger).
+* `GET /api/locations` (Accepts `?include_archived=true`).
+* `GET /api/suppliers` (Accepts `?include_archived=true`).
+* `POST /api/suppliers` (Admin only).
+* `PUT /api/suppliers/{id}` (Admin only).
+* `DELETE /api/suppliers/{id}` (Soft deletes).
 
 ### 6.3 Transaction Enclaves
 * `POST /api/stock/transaction`
-  - **Auth**: Required.
-  - **Payload**: `{ product_id, location_id, transaction_type, quantity_change, reference_number, notes }`
-  - **Behavior**: Performs constraints check: product and location must match the active session `shop_id`. Inserts new record.
-* `GET /api/stock/ledger`
-  - **Auth**: Required.
-  - **Behavior**: Chronological list of transactions belonging to user `shop_id`.
+  - Payload: `{ product_id, location_id, transaction_type, quantity_change, reference_number, notes, origin_location_id, destination_location_id, supplier_id, batch_number, mfg_date, expiry_date }`
+* `GET /api/stock/ledger` -> Returns full active transaction logs.
+
+### 6.4 Reporting & Activity
+* `GET /api/products/{id}/ledger` -> Returns paginated ledger entries.
+* `GET /api/reports/movement` -> Returns aggregated stock movement stats.
+* `GET /api/reports/expiry-alerts` -> Returns lists of expiring product batches.
+* `GET /api/me/activity` -> Returns chronological operator activity log feed.
+* `PUT /api/me/profile` -> Payload: `{ name, phone, language_code }` (Updates preferences).
 
 ---
 
 ## 7. Non-Functional & Security Requirements
 
 ### 7.1 Security & Cryptography
-* **Password Hashing**: Cryptographic salt + hashing executed via `bcrypt`. Plaintext passwords are never logged or stored.
-* **JWT Integrity**: Tokens are signed using HS256 algorithm with a high-entropy secret loaded from the environment (`JWT_SECRET`).
-* **Cookies**: Auth cookie is designated `secure` (enforced over HTTPS), `httpOnly` (prevents XSS retrieval), and `SameSite=None` (allows cross-origin resource sharing).
+* **Password Hashing**: Cryptographic salt + hashing executed via `bcrypt`.
+* **JWT Integrity**: Tokens are signed using HS256 algorithm with high-entropy keys.
+* **Cookies**: Auth cookie is designated `secure` (HTTPS), `httpOnly`, and `SameSite=None`.
 
 ### 7.2 Data Integrity
-* **Unique Constraints**: SKUs are strictly constrained to be unique *within a single shop* (composite index of `sku` + `shop_id`).
-* **Foreign Key Referential Integrity**: Database-level constraints ensure transaction ledger records cannot point to non-existent products or locations.
-
-### 7.3 Performance Scaling
-* **Dynamic Aggregations**: Dynamic aggregation pipelines scale utilizing index coverage (`idx_ledger_product_shop`).
-* **Connection Pools**: Database connections reuse high-performance async pools to avoid connection leaks during heavy worker request cycles.
+* **Unique Constraints**: SKUs are strictly unique *within a single shop*.
+* **Referential Integrity**: Ledger entries cannot refer to non-existent locations or products.

@@ -1556,7 +1556,7 @@ app.include_router(api_router)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,https://inventory-tracker-ecru-mu.vercel.app").split(",") if o.strip()],
+    allow_origins=[o.strip() for o in os.environ.get("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000,https://inventory-tracking.app,https://inventory-tracker-2u81mxo2e-kiranrajn03s-projects.vercel.app").split(",") if o.strip()],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

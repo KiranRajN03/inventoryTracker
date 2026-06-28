@@ -1,41 +1,40 @@
 # Project Context: Inventory Management Platform
 
-This document serves as the single source of truth for the **Inventory Management Platform** context, architecture, schema, patterns, and current development state. 
-
-> [!IMPORTANT]
-> **Developer Agent Guideline**: 
-> - **Always refer to this file first** to understand the application before starting any task.
-> - **Update this file** whenever you make database schema changes, implement new endpoints, change core design guidelines, or complete tasks in the backlog. Keep this file updated as a living document!
+This document serves as the single source of truth for the **Inventory Management Platform** context, architecture, schema, patterns, and development guidelines.
 
 ---
 
-## 1. System Overview & Problem Statement
-The application is a full-stack **Inventory Management Platform** designed for high auditability and efficiency. It serves two distinct user roles:
-1. **Admins**: Manage products (SKUs), warehouse locations, view dashboard statistics, and inspect the full stock ledger.
-2. **Floor Workers**: Access simple interfaces to perform warehouse operations (Receive stock, Pick stock, Cycle Count).
+## 1. System Overview & Core Purpose
+The application is a full-stack **Inventory Control & Management Platform** tailored for shop owners who want to track their warehouse and floor inventory with absolute accuracy and auditable history.
 
-### Core Architectural Pivot: Immutable Stock Ledger
-Unlike naive inventory databases that mutate a `quantity` field in a product table, this application employs an **insert-only transaction ledger pattern** (`stock_ledger`):
-- Stock is **never updated or deleted** directly.
-- Every inventory action (`RECEIVE`, `PICK`, `TRANSFER`, `AUDIT`) is appended as a transactional entry with a signed quantity change (e.g., `+100` for receiving, `-5` for picking).
-- Current stock levels for any product are **dynamically aggregated on the fly** by summing the `quantity_change` values in the ledger.
-- **Benefits**: Perfect historical audit trail, robust multi-user conflict resolution, simplified offline-first mobile sync (append-only sync queues), and the ability to query historical inventory levels at any arbitrary timestamp.
-
----
-
-## 2. Tech Stack & Environment
-The application is split into three main parts:
-- **Backend (FastAPI + PostgreSQL)**: High-performance async API backend using Pydantic, Python-JWT for token authentication, and `psycopg2-binary` for database connectivity.
-- **Frontend (React)**: Modern dashboard web client built with React Router, Context API, Tailwind CSS, and `shadcn/ui` components.
-- **Mobile (React Native / Expo)**: (Currently planned/placeholder scaffold under `/mobile`) For floor workers utilizing barcode scanning, SQLite local cache, and async offline-to-online sync queues.
-
-### Database Engine
-The production and development databases use **PostgreSQL**. A fallback or developer default SQLite structure is documented in older files, but the core implementation in `backend/server.py` relies on `psycopg2` using a `DATABASE_URL` environment variable.
+### Key Business Constraints
+* **Standalone Ownership**: The application is designed for independent shops/warehouses. Each shop owner hosts/owns their instance.
+* **Concurrent Logins**: Up to **5 concurrent sessions** are supported per user account using the same credentials at any given point (ideal for small operations where multiple workers share a single account).
+* **Forgot Password Flow**: A credential recovery option is provided at the login screen to allow password resets.
+* **Role-Based Access Control**:
+  1. **Admins**: Have full access to the Web Dashboard to manage products (SKUs), view live warehouse bins, inspect the immutable stock ledger, and view statistics.
+  2. **Floor Workers**: Access a simplified, mobile-first warehouse interface to perform quick actions (Receive, Pick, and Audit stock).
 
 ---
 
-## 3. Database Schema Mapping
-The PostgreSQL schema consists of four tables. Tables are initialized dynamically on startup in `server.py`:
+## 2. Core Architecture: Immutable Stock Ledger
+Unlike naive inventory apps that modify a `quantity` column directly in a product table, this application employs an **immutable, insert-only transaction ledger pattern**:
+* **No UPDATE or DELETE Operations**: Once written, ledger records (`stock_ledger`) are never changed or removed.
+* **On-the-Fly Dynamic Aggregation**: A product's current stock level is computed dynamically by summing up all `quantity_change` values (e.g., `+100` for `RECEIVE`, `-5` for `PICK`) associated with that product's ID.
+* **Reconciliation and Auditing**: This model provides a perfect, tamper-proof history of every inventory movement, enabling simple audit trails and time-travel reports (finding the stock level at any specific date/time in the past).
+* **Conflict-Free Syncing**: Because records are append-only, synchronizing offline mobile transactions is simple and avoids complex merge conflicts.
+
+---
+
+## 3. Technology Stack
+* **Backend (FastAPI + PostgreSQL)**: Asynchronous Python REST API utilizing Pydantic models for validation, SQLAlchemy for database modeling, and JWT token authentication.
+* **Frontend (React)**: Clean, interactive SPA built using React Router, Tailwind CSS, Context API for global state, and custom Swiss high-contrast grid components.
+* **Mobile (React Native / Expo)**: Hybrid mobile application for barcode scanning and manual ledger logging, incorporating local SQLite caches and offline sync queues.
+* **Database**: PostgreSQL (production and local testing) with automatic table initialization on server boot.
+
+---
+
+## 4. Database Schema Mapping
 
 ```mermaid
 erDiagram
@@ -81,149 +80,96 @@ erDiagram
     locations ||--o{ stock_ledger : "at"
 ```
 
-### Table Details
-1. **`users`**: Role-based system users (`admin` or `worker`). Password hashes are generated via `bcrypt` with random salt.
-2. **`products`**: Identifies items using a unique **SKU**. Custom low-stock thresholds are configured per-item.
-3. **`locations`**: Warehouse storage cells categorized using a hierarchical model:
-   $$\text{Warehouse} \rightarrow \text{Zone} \rightarrow \text{Aisle} \rightarrow \text{Bin}$$
-   *(Example: `WH1` $\rightarrow$ `A` $\rightarrow$ `1` $\rightarrow$ `01` yields path `WH1-A-1-01`)*
-4. **`stock_ledger`**: The immutable transaction table. Contains foreign keys to `products`, `locations`, and `users`.
-   - **Indexes**: 
-     - `idx_stock_product` on `product_id` (accelerates on-the-fly stock aggregation queries)
-     - `idx_stock_timestamp` on `timestamp` (accelerates timeline queries and sync delta pulls)
+### Table Definitions & Details
+1. **`users`**: Represents registered admins/workers.
+2. **`products`**: Identifies unique catalog items via a **SKU** field. Defines low stock warning thresholds.
+3. **`locations`**: Hierarchical warehouse slots mapped as:
+   $$\text{Warehouse ID} \rightarrow \text{Zone} \rightarrow \text{Aisle} \rightarrow \text{Bin}$$
+   *Example: `WH1` $\rightarrow$ `A` $\rightarrow$ `1` $\rightarrow$ `01` parses to path `WH1-A-1-01`.*
+4. **`stock_ledger`**: The append-only ledger history. Contains signed quantities indicating inventory delta. Indexed on `product_id` and `timestamp` to optimize dynamic aggregation queries.
 
 ---
 
-## 4. Key Design System (Swiss High-Contrast)
-The UI features a premium, modern aesthetic styled after **Swiss High-Contrast Grid Design**:
-- **Typography**: 
-  - Headings: `Cabinet Grotesk` (bold, tight tracking).
-  - Body: `IBM Plex Sans` (sleek, legible).
-  - System elements (SKUs, counts, logs): `JetBrains Mono`.
-- **Colors**:
-  - Base: Monochrome (Pure white `#FFFFFF`, off-white `#F4F4F6`, dark slate `#0A0A0A`).
-  - Brand Primary Accent: International Klein Blue (`#002FA7`) for selected items, primary CTAs, active states.
-  - Brand Alert Accent: Red (`#FF3B30`) for low-stock items or danger states.
-- **Borders & Shadows**:
-  - Sharp 1px borders.
-  - Strictly no shadows or soft blurs to maintain Swiss structural precision.
+## 5. Design System: Swiss High-Contrast
+The interface follows a premium, functional **Swiss High-Contrast Grid Design**:
+* **Typography**:
+  - Headings: `Cabinet Grotesk` (heavy weight, ultra-tight tracking).
+  - Body: `IBM Plex Sans` (modern, geometric).
+  - Data / SKUs / Quantities: `JetBrains Mono` for maximum readability.
+* **Color System**:
+  - Main Surfaces: Stark monochrome shades (pure white `#FFFFFF`, off-white `#F4F4F6`, dark slate `#0A0A0A`).
+  - Primary Accent: International Klein Blue (`#002FA7`) for selected menus, main CTAs, and focus states.
+  - Alert Accent: Destructive Red (`#FF3B30`) for low-stock items or error messages.
+* **Layout Grid**: Flat surfaces separated by clean 1px borders; zero shadows, soft gradients, or blurs to reflect a precise, factory-floor control room feel.
 
 ---
 
-## 5. Folder Structure Reference
-The repository layout is organized as follows:
-
+## 6. Folder Structure Reference
 ```
 inventoryTracker/
-├── backend/                       # FastAPI Server
-│   ├── api/                       # Vercel serverless entrypoint router
-│   │   └── index.py               # Imports app from server.py
+├── backend/                       # FastAPI Python Backend
+│   ├── api/                       # Entry point mapping for cloud routing
+│   │   └── index.py               # Imports FastAPI application
 │   ├── tests/
-│   │   └── backend_test.py        # Comprehensive test coverage (35+ cases)
-│   ├── .env                       # Local environment configurations
-│   ├── server.py                  # Main backend server (auth, products, locations, ledger, sync)
-│   └── requirements.txt           # Python dependency specifications
-├── frontend/                      # React SPA Web Dashboard
-│   ├── public/                    # Standard HTML template, manifest, icons
+│   │   └── backend_test.py        # 35+ regression and unit tests
+│   ├── server.py                  # Database init, endpoints (Auth, Products, Locations, Ledger, Sync)
+│   └── requirements.txt           # Python backend dependencies
+├── frontend/                      # React Web Client
+│   ├── public/                    # index.html, local assets, manifest
+│   │   ├── login-bg.png           # Local Swiss-style warehouse background
+│   │   └── onboarding-bg.png      # Local welcome onboarding graphic
 │   ├── src/
-│   │   ├── components/            # UI components (shadcn/ui, grids)
-│   │   ├── contexts/              # Global state (AuthContext.js)
-│   │   ├── pages/                 # Routing endpoints (Dashboard, Products, Locations, Ledger, Worker)
-│   │   ├── index.css              # Custom Swiss-style typography & utility injections
+│   │   ├── components/            # UI inputs, buttons, dialogs
+│   │   ├── contexts/              # Authentication & user state
+│   │   ├── pages/                 # Routing views (Login, Register, Dashboard, Products, Locations, Ledger)
 │   │   └── App.js                 # App configuration & route guards
-│   ├── craco.config.js            # Build modifications for shadcn/Tailwind
-│   └── vercel.json                # Vercel deployment directives
-├── mobile/                        # React Native Expo Mobile client
-│   ├── App.js                     # Interim worker loading screen / router
-│   └── README.md                  # Development path, SQLite schema, and sync flow design
-├── memory/                        # Core requirements & static references
-│   └── PRD.md                     # Project requirements & initial backlog status
-└── docs/                          # User walkthrough guide, screenshots, and visual guides
+│   ├── craco.config.js            # Tailwind & build overrides
+│   └── package.json               # Frontend dependencies & scripts
+├── mobile/                        # React Native Expo Mobile App
+│   ├── App.js                     # Mobile client loader & navigator
+│   └── README.md                  # Mobile offline sync architecture
+└── docs/                          # Guides and user walkthrough materials
 ```
-
----
-
-## 6. Key API Endpoints
-
-### Authentication
-- `POST /api/auth/register` - Register a user (Worker/Admin). Returns JWT token.
-- `POST /api/auth/login` - Authenticate user credentials. Sets JWT token in `httpOnly` secure cookie.
-- `POST /api/auth/logout` - Revokes session by clearing cookies.
-- `GET /api/auth/me` - Resolves active session data for user object.
-
-### Product Management
-- `GET /api/products` - Returns product list. Admin and worker authorized. Aggregates `current_stock` dynamically.
-- `POST /api/products` - Add a new SKU (Admin Only).
-- `PUT /api/products/{id}` - Modify existing SKU (Admin Only).
-- `DELETE /api/products/{id}` - Remove SKU (Admin Only).
-
-### Location Management
-- `GET /api/locations` - Lists storage locations.
-- `POST /api/locations` - Add a new bin location (Admin Only).
-- `PUT /api/locations/{id}` - Modify storage capacity or path details (Admin Only).
-- `DELETE /api/locations/{id}` - Delete storage location (Admin Only).
-
-### Stock Ledger & Transactions
-- `POST /api/stock/transaction` - Create a single ledger entry (`RECEIVE`, `PICK`, `TRANSFER`, `AUDIT`).
-- `GET /api/stock/ledger` - List all ledger entries chronologically.
-- `GET /api/stock/product/{product_id}` - Fetch ledger log history filtered for a specific SKU.
-
-### Mobile Offline Sync
-- `POST /api/sync/push` - Receive a queued list of transaction rows compiled offline by mobile clients.
-- `GET /api/sync/pull` - Retrieve transaction logs committed since worker's last connection timestamp.
 
 ---
 
 ## 7. Configuration & Local Execution
 
-### Backend
-1. Initialize `.env` from `env.example`.
-2. Install pip dependencies:
+### Backend Server Setup
+1. Setup Python virtual environment:
    ```bash
    cd backend
+   python -m venv .venv
+   source .venv/bin/activate
    pip install -r requirements.txt
    ```
-3. Set `DATABASE_URL` for PostgreSQL. For local testing, ensure a local Postgres instance is running or mock/configure a sqlite database connection if doing light local edits.
-4. Launch hot-reloading server:
+2. Create/edit backend `.env` configuration file:
+   ```env
+   DATABASE_URL=postgresql://username:password@localhost:5472/inventory
+   ```
+3. Run the development server:
    ```bash
-   uvicorn server:app --reload --host 127.0.0.1 --port 8000
+   uvicorn server:app --reload --port 8000
    ```
 
-### Frontend
-1. Initialize `.env.local` from `env.example`. Ensure `REACT_APP_BACKEND_URL` targets the correct port (`http://localhost:8000`).
-2. Install packages:
+### Frontend Setup
+1. Install node dependencies:
    ```bash
    cd frontend
    npm install
    ```
-3. Launch development server:
+2. Configure frontend variables in `.env.local`:
+   ```env
+   REACT_APP_BACKEND_URL=http://localhost:8000
+   ```
+3. Start the application:
    ```bash
    npm start
    ```
 
-### Automated Testing
-Run the backend tests using `pytest` to guarantee APIs behave as expected:
+### Running Backend Tests
+Ensure the server API works correctly by executing tests:
 ```bash
 cd backend
 pytest -v tests/backend_test.py
 ```
-
----
-
-## 8. Development Backlog (PRD Tracking)
-
-### P0 (Completed ✅)
-- [x] Initialize the React Native Expo app under `mobile/` with full directory structures.
-- [x] Incorporate `expo-camera` (using modern `<CameraView>`) for barcode scanning and manual input fallback.
-- [x] Set up local SQLite instance cache (`products_cache`, `locations_cache`, `pending_transactions`) using `expo-sqlite`.
-- [x] Build robust sync services for transaction syncing via `/api/sync/push` and master pulling.
-
-### P1 (Dashboard & Administration Enhancements)
-- [ ] Time-series velocity visualization (Recharts charting transaction flows on dashboard).
-- [ ] Specialized product view screen displaying per-SKU detailed timeline of movements.
-- [ ] Bulk file SKU import & ledger export options (CSV formatting).
-
-### P2 (Security & Refactor Tasks)
-- [ ] Implement rate-limiting or brute-force lockout (5 attempts triggers 15 minutes lockout) on login endpoints.
-- [ ] Refactor monolithic `server.py` routes out into neat domain packages (`routes/auth.py`, `routes/products.py`, etc.).
-- [ ] Standardize API response payloads using uniform strict schema handlers.

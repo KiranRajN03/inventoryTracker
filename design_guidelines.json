@@ -93,12 +93,12 @@
   },
   "image_urls": [
     {
-      "url": "https://static.prod-images.emergentagent.com/jobs/86b066e6-16cc-4b95-86c1-8aeb1025cdaf/images/a0a5342a7d30a1821e3fe20f49f9b9c32f8a51eb09da10083c23e3fefc2f7a76.png",
+      "url": "/login-bg.png",
       "category": "Admin Login Background",
       "description": "Minimalist Swiss design architectural abstract, clean white and light grey geometric warehouse simulation with stark lighting."
     },
     {
-      "url": "https://static.prod-images.emergentagent.com/jobs/86b066e6-16cc-4b95-86c1-8aeb1025cdaf/images/6eefca0fd2ef453da3e4756bf41b39e8a49f38f3374cc440c181cd3298aa0b55.png",
+      "url": "/onboarding-bg.png",
       "category": "Mobile Onboarding / Welcome Background",
       "description": "Cinematic macro photography of a barcode scanner laser hitting a clean white box."
     },

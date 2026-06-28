@@ -4,8 +4,6 @@
 >
 > **Tech Stack**: FastAPI · React · MongoDB · Tailwind · shadcn/ui
 >
-> **Live Preview**: https://stock-traceability-1.preview.emergentagent.com
->
 > **Admin Login**: `admin@inventory.com` / `Admin@123`
 
 ---

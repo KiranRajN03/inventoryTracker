@@ -121,7 +121,7 @@ export const Register = () => {
 
       <div 
         className="hidden lg:block lg:flex-1 bg-cover bg-center" 
-        style={{backgroundImage: `url('https://static.prod-images.emergentagent.com/jobs/86b066e6-16cc-4b95-86c1-8aeb1025cdaf/images/a0a5342a7d30a1821e3fe20f49f9b9c32f8a51eb09da10083c23e3fefc2f7a76.png')`}}
+        style={{backgroundImage: `url('/login-bg.png')`}}
       />
     </div>
   );
